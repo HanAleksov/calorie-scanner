@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: calorie-scanner
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CALORIE_DB_PATH
+        value: /var/data/calorie_scanner.db
+      - key: CALORIE_UPLOADS_DIR
+        value: /var/data/uploads
+    disk:
+      name: calorie-data
+      mountPath: /var/data
+      sizeGB: 1

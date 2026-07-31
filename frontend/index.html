@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calorie Scanner</title>
+<meta name="theme-color" content="#ea580c">
+
+<!-- iOS PWA support -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Calories">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header>
+  <h1>🍽 Calorie Scanner</h1>
+  <div class="actions">
+    <button class="icon-btn" id="installBtn" style="display:none">⬇</button>
+    <button class="icon-btn" id="themeBtn">🌓</button>
+  </div>
+</header>
+
+<main>
+  <div id="iosHint" class="hint-banner" style="display:none">
+    <span>Install this app: tap Share, then "Add to Home Screen".</span>
+    <button id="iosHintClose">✕</button>
+  </div>
+
+  <!-- TODAY -->
+  <section class="tab-panel active" id="tab-today">
+    <div class="card">
+      <div class="totals-row">
+        <div>
+          <span class="kcal" id="totalCals">0</span>
+          <span class="kcal-goal" id="calGoalLabel">/ 2200 kcal</span>
+        </div>
+      </div>
+      <div class="progress-bar"><div class="fill" id="calProgressFill" style="width:0%"></div></div>
+      <div class="macros">
+        <div class="macro protein">
+          <div class="label">Protein</div>
+          <div class="value" id="proteinVal">0g</div>
+          <div class="bar"><div class="fill" id="proteinFill" style="width:0%"></div></div>
+        </div>
+        <div class="macro carbs">
+          <div class="label">Carbs</div>
+          <div class="value" id="carbsVal">0g</div>
+          <div class="bar"><div class="fill" id="carbsFill" style="width:0%"></div></div>
+        </div>
+        <div class="macro fat">
+          <div class="label">Fat</div>
+          <div class="value" id="fatVal">0g</div>
+          <div class="bar"><div class="fill" id="fatFill" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <select class="meal-type-select" id="mealTypeSelect">
+        <option value="breakfast">Breakfast</option>
+        <option value="lunch">Lunch</option>
+        <option value="dinner">Dinner</option>
+        <option value="snack" selected>Snack</option>
+      </select>
+      <div class="add-meal-actions">
+        <button class="btn btn-primary" id="takePhotoBtn">📷 Add Photo</button>
+        <button class="btn btn-secondary" id="manualEntryBtn">✏️ Manual</button>
+      </div>
+      <input type="file" id="photoInput" accept="image/*" capture="environment">
+    </div>
+
+    <div class="card">
+      <div id="entriesList"></div>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section class="tab-panel" id="tab-history">
+    <div class="card">
+      <div id="historyList"></div>
+    </div>
+  </section>
+
+  <!-- GOALS -->
+  <section class="tab-panel" id="tab-goals">
+    <div class="card">
+      <div class="field"><label>Daily Calories</label><input type="number" id="goalCalories"></div>
+      <div class="field"><label>Protein (g)</label><input type="number" id="goalProtein"></div>
+      <div class="field"><label>Carbs (g)</label><input type="number" id="goalCarbs"></div>
+      <div class="field"><label>Fat (g)</label><input type="number" id="goalFat"></div>
+      <button class="btn btn-primary" id="saveGoalsBtn" style="width:100%">Save Goals</button>
+    </div>
+  </section>
+</main>
+
+<nav class="tabbar">
+  <button class="tab-btn active" data-tab="today"><span class="tab-icon">📋</span>Today</button>
+  <button class="tab-btn" data-tab="history"><span class="tab-icon">📈</span>History</button>
+  <button class="tab-btn" data-tab="goals"><span class="tab-icon">🎯</span>Goals</button>
+</nav>
+
+<!-- Manual entry modal -->
+<div class="modal-backdrop hidden" id="manualModal">
+  <div class="modal-sheet">
+    <h2>Manual Entry</h2>
+    <div class="field"><label>Description</label><input type="text" id="manualDesc" placeholder="e.g. Protein shake"></div>
+    <div class="field"><label>Calories</label><input type="number" id="manualCals"></div>
+    <div class="field"><label>Protein (g)</label><input type="number" id="manualProtein" value="0"></div>
+    <div class="field"><label>Carbs (g)</label><input type="number" id="manualCarbs" value="0"></div>
+    <div class="field"><label>Fat (g)</label><input type="number" id="manualFat" value="0"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="manualCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="manualSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit entry modal -->
+<div class="modal-backdrop hidden" id="editModal">
+  <div class="modal-sheet">
+    <h2>Edit Entry</h2>
+    <div class="field"><label>Meal type</label>
+      <select class="meal-type-select" id="editMealType">
+        <option value="breakfast">Breakfast</option>
+        <option value="lunch">Lunch</option>
+        <option value="dinner">Dinner</option>
+        <option value="snack">Snack</option>
+      </select>
+    </div>
+    <div class="field"><label>Calories</label><input type="number" id="editCals"></div>
+    <div class="field"><label>Protein (g)</label><input type="number" id="editProtein"></div>
+    <div class="field"><label>Carbs (g)</label><input type="number" id="editCarbs"></div>
+    <div class="field"><label>Fat (g)</label><input type="number" id="editFat"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="editCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="editSaveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
