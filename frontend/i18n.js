@@ -128,7 +128,7 @@ const TRANSLATIONS = {
     delete_profile_confirm: "Delete your profile and everything you've logged? This can't be undone.",
     close: "Close",
     adjust_portions: "Adjust portions (grams)",
-    recalculate_btn: "Recalculate from grams",
+    edit_numbers_manually: "Edit numbers manually",
     name_updated: "Name updated",
     pin_updated: "PIN updated",
     pin_removed: "PIN removed",
@@ -137,6 +137,13 @@ const TRANSLATIONS = {
     today_reset: "Today's log has been cleared",
     profile_deleted: "Profile deleted",
     portions_recalculated: "Recalculated from your corrected portions",
+
+    goals_explain:
+      "Based on your BMR ({bmr} kcal) via the Mifflin-St Jeor equation, scaled by your activity level " +
+      "to a maintenance TDEE of {tdee} kcal, then adjusted {direction} by about {rate}kg/week toward your goal. " +
+      "Protein is set high (within the ISSN's recommended 1.6-2.2g/kg range) to preserve lean mass.",
+    direction_up: "up",
+    direction_down: "down",
   },
 
   bg: {
@@ -268,7 +275,7 @@ const TRANSLATIONS = {
     delete_profile_confirm: "Да изтрия ли профила ти и всичко записано в него? Това не може да се отмени.",
     close: "Затвори",
     adjust_portions: "Коригирай грамажа",
-    recalculate_btn: "Преизчисли от грамажа",
+    edit_numbers_manually: "Редактирай числата ръчно",
     name_updated: "Името е обновено",
     pin_updated: "ПИН-ът е обновен",
     pin_removed: "ПИН-ът е премахнат",
@@ -277,6 +284,14 @@ const TRANSLATIONS = {
     today_reset: "Дневникът за днес е изчистен",
     profile_deleted: "Профилът е изтрит",
     portions_recalculated: "Преизчислено според коригирания грамаж",
+
+    goals_explain:
+      "Изчислено на база твоя базов метаболизъм (БМР: {bmr} кал.) чрез уравнението на Mifflin-St Jeor, " +
+      "умножен по нивото на активност до поддържащи {tdee} кал. дневно, след което коригирани {direction} " +
+      "с около {rate} кг/седмица към целта ти. Протеинът е зададен високо (в препоръчания от ISSN диапазон " +
+      "1.6-2.2г/кг) за запазване на мускулната маса.",
+    direction_up: "нагоре",
+    direction_down: "надолу",
   },
 };
 

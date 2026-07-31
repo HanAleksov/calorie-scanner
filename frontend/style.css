@@ -179,6 +179,7 @@ main { max-width: 540px; margin: 0 auto; padding: 16px; }
 .macro.protein .bar .fill { background: var(--protein); }
 .macro.carbs .bar .fill { background: var(--carbs); }
 .macro.fat .bar .fill { background: var(--fat); }
+.macro .bar .fill.over { background: var(--danger); }
 
 .section-title { font-size: 15px; font-weight: 700; margin: 0 0 12px; letter-spacing: -0.01em; }
 .section-title-row { display: flex; justify-content: space-between; align-items: center; }

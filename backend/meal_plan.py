@@ -78,7 +78,7 @@ def generate_meal_plan(targets: dict, dietary_notes: str = "", lang: str = "en")
 
     response = client.messages.create(
         model=MODEL,
-        max_tokens=3072,
+        max_tokens=6000,
         system=system,
         output_config={"format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
         messages=[{"role": "user", "content": prompt}],
@@ -86,6 +86,11 @@ def generate_meal_plan(targets: dict, dietary_notes: str = "", lang: str = "en")
 
     if response.stop_reason == "refusal":
         raise RuntimeError("The model declined to generate a meal plan.")
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError("The meal plan response was cut off before it finished. Try again.")
 
     text = next(block.text for block in response.content if block.type == "text")
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError("The meal plan response wasn't valid — try again.") from e

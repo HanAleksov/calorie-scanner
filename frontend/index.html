@@ -271,13 +271,16 @@
     <div id="editItemsSection" class="hidden">
       <label data-i18n="adjust_portions">Adjust portions (grams)</label>
       <div id="editItemsList" class="edit-items-list"></div>
-      <button class="btn btn-secondary" id="recalcPortionsBtn" style="width:100%;margin-bottom:12px" data-i18n="recalculate_btn">Recalculate from grams</button>
     </div>
 
-    <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="editCals"></div>
-    <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="editProtein"></div>
-    <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="editCarbs"></div>
-    <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="editFat"></div>
+    <details class="manual-goals-details" id="editAdvancedDetails">
+      <summary data-i18n="edit_numbers_manually">Edit numbers manually</summary>
+      <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="editCals"></div>
+      <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="editProtein"></div>
+      <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="editCarbs"></div>
+      <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="editFat"></div>
+    </details>
+
     <div class="modal-actions">
       <button class="btn btn-secondary" id="editCancelBtn" data-i18n="cancel">Cancel</button>
       <button class="btn btn-primary" id="editSaveBtn" data-i18n="save">Save</button>

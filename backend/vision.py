@@ -72,7 +72,7 @@ def analyze_meal_photo(image_bytes: bytes, media_type: str, lang: str = "en") ->
 
     response = client.messages.create(
         model=MODEL,
-        max_tokens=2048,
+        max_tokens=3072,
         system=system,
         output_config={"format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
         messages=[
@@ -98,6 +98,11 @@ def analyze_meal_photo(image_bytes: bytes, media_type: str, lang: str = "en") ->
 
     if response.stop_reason == "refusal":
         raise RuntimeError("The model declined to analyze this image.")
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError("The analysis was cut off before it finished. Try again.")
 
     text = next(block.text for block in response.content if block.type == "text")
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError("The analysis response wasn't valid — try again.") from e

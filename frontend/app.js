@@ -327,9 +327,11 @@ function renderTotals(totals, goals) {
 }
 
 function setMacro(name, value, goal) {
-  $(`${name}Val`).textContent = `${value}g`;
+  $(`${name}Val`).textContent = `${value}/${goal}g`;
   const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
-  $(`${name}Fill`).style.width = pct + "%";
+  const fill = $(`${name}Fill`);
+  fill.style.width = pct + "%";
+  fill.classList.toggle("over", value > goal);
 }
 
 const MEAL_LABEL_KEY = { breakfast: "meal_breakfast", lunch: "meal_lunch", dinner: "meal_dinner", snack: "meal_snack" };
@@ -391,6 +393,8 @@ async function openEdit(id) {
   $("editFat").value = e.fat_g;
 
   const hasGrams = e.items.some((i) => i.est_grams != null);
+  // No grams to correct (manual entry) -> the manual numbers ARE the primary edit path, show them open.
+  $("editAdvancedDetails").open = !hasGrams;
   if (hasGrams) {
     $("editItemsList").innerHTML = e.items
       .map(
@@ -410,41 +414,41 @@ async function openEdit(id) {
 }
 $("editCancelBtn").addEventListener("click", () => $("editModal").classList.add("hidden"));
 
-$("recalcPortionsBtn").addEventListener("click", async () => {
-  const id = state.entryBeingEdited;
-  const items = Array.from(document.querySelectorAll(".edit-item-grams"))
-    .sort((a, b) => Number(a.dataset.idx) - Number(b.dataset.idx))
-    .map((input) => ({ est_grams: input.value === "" ? null : Number(input.value) }));
-
-  const res = await apiFetch(`/api/entries/${id}/portions`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items }),
-  });
-  if (!res.ok) {
-    toast(t("something_wrong"));
-    return;
-  }
-  const updated = await res.json();
-  $("editCals").value = updated.total_calories;
-  $("editProtein").value = updated.protein_g;
-  $("editCarbs").value = updated.carbs_g;
-  $("editFat").value = updated.fat_g;
-  toast(t("portions_recalculated"));
-});
-
 $("editSaveBtn").addEventListener("click", async () => {
   const id = state.entryBeingEdited;
-  await apiFetch(`/api/entries/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      meal_type: $("editMealType").value,
+
+  // Grams shown -> recalculate calories/macros from them first (this also persists).
+  const gramsInputs = document.querySelectorAll(".edit-item-grams");
+  if (gramsInputs.length) {
+    const items = Array.from(gramsInputs)
+      .sort((a, b) => Number(a.dataset.idx) - Number(b.dataset.idx))
+      .map((input) => ({ est_grams: input.value === "" ? null : Number(input.value) }));
+    const res = await apiFetch(`/api/entries/${id}/portions`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    });
+    if (!res.ok) {
+      toast(t("something_wrong"));
+      return;
+    }
+  }
+
+  // Advanced section open -> manual numbers take precedence over the grams recalc above.
+  const payload = { meal_type: $("editMealType").value };
+  if ($("editAdvancedDetails").open) {
+    Object.assign(payload, {
       total_calories: Number($("editCals").value),
       protein_g: Number($("editProtein").value),
       carbs_g: Number($("editCarbs").value),
       fat_g: Number($("editFat").value),
-    }),
+    });
+  }
+
+  await apiFetch(`/api/entries/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
   $("editModal").classList.add("hidden");
   loadToday();
@@ -604,11 +608,12 @@ $("calcGoalsBtn").addEventListener("click", async () => {
     $("sugProtein").textContent = targets.protein_g + "g";
     $("sugCarbs").textContent = targets.carbs_g + "g";
     $("sugFat").textContent = targets.fat_g + "g";
-    $("sugExplain").textContent =
-      `Based on your BMR (${targets.bmr} kcal) via the Mifflin-St Jeor equation, scaled by your activity level ` +
-      `to a maintenance TDEE of ${targets.tdee} kcal, then adjusted ${targets.rate_kg_per_week >= 0 ? "up" : "down"} ` +
-      `by about ${Math.abs(targets.rate_kg_per_week).toFixed(2)}kg/week toward your goal. Protein is set high ` +
-      `(within the ISSN's recommended 1.6-2.2g/kg range) to preserve lean mass.`;
+    $("sugExplain").textContent = t("goals_explain", {
+      bmr: targets.bmr,
+      tdee: targets.tdee,
+      direction: targets.rate_kg_per_week >= 0 ? t("direction_up") : t("direction_down"),
+      rate: Math.abs(targets.rate_kg_per_week).toFixed(2),
+    });
     $("suggestedGoalsCard").style.display = "block";
     $("suggestedGoalsCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
   } catch (err) {
