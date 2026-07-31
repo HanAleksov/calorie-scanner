@@ -34,16 +34,25 @@ $("themeBtn").addEventListener("click", () => {
 
 // ---------- Language ----------
 function refreshLangBtn() {
-  $("langBtn").textContent = currentLang() === "bg" ? "BG" : "EN";
+  const label = currentLang() === "bg" ? "BG" : "EN";
+  $("langBtn").textContent = label;
+  $("langBtnGate").textContent = label;
 }
-$("langBtn").addEventListener("click", () => {
+function toggleLanguage() {
   localStorage.setItem("lang", currentLang() === "bg" ? "en" : "bg");
   applyStaticTranslations();
   refreshLangBtn();
-  loadToday();
-  if (document.getElementById("tab-history").classList.contains("active")) loadHistory();
-  if (document.getElementById("tab-plan").classList.contains("active")) loadSavedMealPlan();
-});
+  if (!$("appRoot").classList.contains("hidden")) {
+    loadToday();
+    if (document.getElementById("tab-history").classList.contains("active")) loadHistory();
+    if (document.getElementById("tab-plan").classList.contains("active")) loadSavedMealPlan();
+  } else {
+    renderUserList();
+  }
+}
+$("langBtn").addEventListener("click", toggleLanguage);
+$("langBtnGate").addEventListener("click", toggleLanguage);
+applyStaticTranslations();
 refreshLangBtn();
 
 // ---------- Tabs ----------
@@ -215,6 +224,80 @@ $("welcomeDismissBtn").addEventListener("click", () => {
   $("welcomeModal").classList.add("hidden");
 });
 
+// ---------- Settings modal ----------
+$("settingsBtn").addEventListener("click", openSettings);
+$("settingsCloseBtn").addEventListener("click", () => $("settingsModal").classList.add("hidden"));
+
+async function openSettings() {
+  const res = await apiFetch("/api/users/me");
+  const me = await res.json();
+  $("settingsName").value = me.name;
+  $("settingsOldPinField").classList.toggle("hidden", !me.has_pin);
+  $("settingsOldPin").value = "";
+  $("settingsNewPin").value = "";
+  $("settingsModal").classList.remove("hidden");
+}
+
+$("settingsSaveNameBtn").addEventListener("click", async () => {
+  const name = $("settingsName").value.trim();
+  if (!name) {
+    toast(t("name_required"));
+    return;
+  }
+  const res = await apiFetch("/api/users/me", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (res.ok) toast(t("name_updated"));
+});
+
+$("settingsSavePinBtn").addEventListener("click", async () => {
+  const oldPin = $("settingsOldPin").value.trim();
+  const newPin = $("settingsNewPin").value.trim();
+  if (newPin && !/^\d{4}$/.test(newPin)) {
+    toast(t("pin_must_be_4_digits"));
+    return;
+  }
+  const res = await apiFetch("/api/users/me/pin", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ old_pin: oldPin || null, new_pin: newPin || null }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    if (res.status === 400 && !oldPin) toast(t("needs_old_pin"));
+    else if (res.status === 403) toast(t("wrong_old_pin"));
+    else toast(err.detail || t("something_wrong"));
+    return;
+  }
+  const data = await res.json();
+  toast(data.has_pin ? t("pin_updated") : t("pin_removed"));
+  $("settingsOldPinField").classList.toggle("hidden", !data.has_pin);
+  $("settingsOldPin").value = "";
+  $("settingsNewPin").value = "";
+});
+
+$("resetTodayBtn").addEventListener("click", async () => {
+  if (!confirm(t("reset_today_confirm"))) return;
+  await apiFetch("/api/today", { method: "DELETE" });
+  toast(t("today_reset"));
+  $("settingsModal").classList.add("hidden");
+  loadToday();
+});
+
+$("deleteProfileBtn").addEventListener("click", async () => {
+  if (!confirm(t("delete_profile_confirm"))) return;
+  await apiFetch("/api/users/me", { method: "DELETE" });
+  toast(t("profile_deleted"));
+  localStorage.removeItem("userId");
+  $("settingsModal").classList.add("hidden");
+  $("appRoot").classList.add("hidden");
+  $("userGate").classList.remove("hidden");
+  applyStaticTranslations();
+  renderUserList();
+});
+
 // ================== TODAY ==================
 const RING_CIRCUMFERENCE = 2 * Math.PI * 62;
 
@@ -306,9 +389,50 @@ async function openEdit(id) {
   $("editProtein").value = e.protein_g;
   $("editCarbs").value = e.carbs_g;
   $("editFat").value = e.fat_g;
+
+  const hasGrams = e.items.some((i) => i.est_grams != null);
+  if (hasGrams) {
+    $("editItemsList").innerHTML = e.items
+      .map(
+        (item, i) => `
+        <div class="edit-item-row">
+          <span class="item-name">${escapeHtml(item.name)}</span>
+          <input type="number" class="edit-item-grams" data-idx="${i}" value="${item.est_grams ?? ""}">
+        </div>`
+      )
+      .join("");
+    $("editItemsSection").classList.remove("hidden");
+  } else {
+    $("editItemsSection").classList.add("hidden");
+  }
+
   $("editModal").classList.remove("hidden");
 }
 $("editCancelBtn").addEventListener("click", () => $("editModal").classList.add("hidden"));
+
+$("recalcPortionsBtn").addEventListener("click", async () => {
+  const id = state.entryBeingEdited;
+  const items = Array.from(document.querySelectorAll(".edit-item-grams"))
+    .sort((a, b) => Number(a.dataset.idx) - Number(b.dataset.idx))
+    .map((input) => ({ est_grams: input.value === "" ? null : Number(input.value) }));
+
+  const res = await apiFetch(`/api/entries/${id}/portions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  if (!res.ok) {
+    toast(t("something_wrong"));
+    return;
+  }
+  const updated = await res.json();
+  $("editCals").value = updated.total_calories;
+  $("editProtein").value = updated.protein_g;
+  $("editCarbs").value = updated.carbs_g;
+  $("editFat").value = updated.fat_g;
+  toast(t("portions_recalculated"));
+});
+
 $("editSaveBtn").addEventListener("click", async () => {
   const id = state.entryBeingEdited;
   await apiFetch(`/api/entries/${id}`, {

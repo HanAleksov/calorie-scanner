@@ -100,6 +100,59 @@ def verify_user_pin(user_id: int, payload: dict):
     return {"ok": ok}
 
 
+@app.get("/api/users/me")
+def get_current_user(user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        user = db.get_user(conn, user_id)
+        user["has_pin"] = db.user_has_pin(conn, user_id)
+    return user
+
+
+@app.put("/api/users/me")
+def rename_current_user(payload: dict, user_id: int = Depends(current_user_id)):
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    with db.get_conn() as conn:
+        return db.rename_user(conn, user_id, name)
+
+
+@app.put("/api/users/me/pin")
+def change_current_user_pin(payload: dict, user_id: int = Depends(current_user_id)):
+    new_pin = payload.get("new_pin") or None
+    old_pin = payload.get("old_pin") or ""
+    if new_pin is not None and (not str(new_pin).isdigit() or len(str(new_pin)) != 4):
+        raise HTTPException(400, "pin must be exactly 4 digits")
+    with db.get_conn() as conn:
+        if db.user_has_pin(conn, user_id):
+            if not old_pin:
+                raise HTTPException(400, "old_pin is required to change an existing PIN")
+            if not db.verify_pin(conn, user_id, old_pin):
+                raise HTTPException(403, "old_pin is incorrect")
+        db.set_pin(conn, user_id, new_pin)
+    return {"ok": True, "has_pin": new_pin is not None}
+
+
+@app.delete("/api/users/me")
+def delete_current_user(user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        image_paths = db.get_image_paths_for_user(conn, user_id)
+        db.delete_user(conn, user_id)
+    for path in image_paths:
+        _remove_upload(path)
+    return {"ok": True}
+
+
+@app.delete("/api/today")
+def reset_today(user_id: int = Depends(current_user_id)):
+    today_str = date.today().isoformat()
+    with db.get_conn() as conn:
+        image_paths = db.delete_entries_for_date(conn, user_id, today_str)
+    for path in image_paths:
+        _remove_upload(path)
+    return {"ok": True}
+
+
 # ---------- meals ----------
 
 @app.post("/api/log-meal")
@@ -232,10 +285,102 @@ def update_entry(entry_id: int, payload: dict, user_id: int = Depends(current_us
 @app.delete("/api/entries/{entry_id}")
 def delete_entry(entry_id: int, user_id: int = Depends(current_user_id)):
     with db.get_conn() as conn:
-        if not db.get_entry(conn, user_id, entry_id):
+        entry = db.get_entry(conn, user_id, entry_id)
+        if not entry:
             raise HTTPException(404, "entry not found")
         db.delete_entry(conn, user_id, entry_id)
+    _remove_upload(entry.get("image_path"))
     return {"ok": True}
+
+
+@app.put("/api/entries/{entry_id}/portions")
+def adjust_portions(entry_id: int, payload: dict, user_id: int = Depends(current_user_id)):
+    new_items_payload = payload.get("items")
+    if not isinstance(new_items_payload, list):
+        raise HTTPException(400, "items must be a list")
+
+    with db.get_conn() as conn:
+        entry = db.get_entry(conn, user_id, entry_id)
+        if not entry:
+            raise HTTPException(404, "entry not found")
+        old_items = json.loads(entry["items_json"])
+        if len(new_items_payload) != len(old_items):
+            raise HTTPException(400, "items must match the entry's item count")
+
+        new_grams = [p.get("est_grams") for p in new_items_payload]
+        entry_totals_fallback = {
+            "calories": entry.get("total_calories") or 0,
+            "protein_g": entry.get("protein_g") or 0,
+            "carbs_g": entry.get("carbs_g") or 0,
+            "fat_g": entry.get("fat_g") or 0,
+        }
+        new_items, totals = _rescale_items(old_items, new_grams, entry_totals_fallback)
+
+        updated = db.update_entry(conn, user_id, entry_id, {
+            "items_json": json.dumps(new_items),
+            "total_calories": totals["calories"],
+            "protein_g": totals["protein_g"],
+            "carbs_g": totals["carbs_g"],
+            "fat_g": totals["fat_g"],
+        })
+    return _entry_to_public(updated)
+
+
+def _rescale_items(old_items: list, new_grams: list, entry_totals_fallback: dict | None = None) -> tuple:
+    total_old_grams = sum((it.get("est_grams") or 0) for it in old_items) or 1
+    fallback = entry_totals_fallback or {"calories": 0, "protein_g": 0, "carbs_g": 0, "fat_g": 0}
+
+    new_items = []
+    totals = {"calories": 0.0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0}
+    for item, new_g in zip(old_items, new_grams):
+        old_g = item.get("est_grams")
+        has_macros = item.get("calories") is not None
+
+        if not has_macros:
+            # legacy entry logged before per-item macros existed — approximate this
+            # item's share of the entry's already-known totals by its share of total grams
+            share = ((old_g or 0) / total_old_grams) if old_g else 0
+            item = {
+                **item,
+                "calories": fallback["calories"] * share,
+                "protein_g": fallback["protein_g"] * share,
+                "carbs_g": fallback["carbs_g"] * share,
+                "fat_g": fallback["fat_g"] * share,
+            }
+            old_g = old_g or item.get("est_grams") or 1
+
+        if new_g is None or not old_g:
+            scaled = dict(item)
+        else:
+            ratio = new_g / old_g
+            scaled = {
+                "name": item["name"],
+                "est_grams": new_g,
+                "calories": round((item.get("calories") or 0) * ratio),
+                "protein_g": round((item.get("protein_g") or 0) * ratio, 1),
+                "carbs_g": round((item.get("carbs_g") or 0) * ratio, 1),
+                "fat_g": round((item.get("fat_g") or 0) * ratio, 1),
+            }
+
+        new_items.append(scaled)
+        totals["calories"] += scaled.get("calories") or 0
+        totals["protein_g"] += scaled.get("protein_g") or 0
+        totals["carbs_g"] += scaled.get("carbs_g") or 0
+        totals["fat_g"] += scaled.get("fat_g") or 0
+
+    totals["calories"] = round(totals["calories"])
+    totals["protein_g"] = round(totals["protein_g"], 1)
+    totals["carbs_g"] = round(totals["carbs_g"], 1)
+    totals["fat_g"] = round(totals["fat_g"], 1)
+    return new_items, totals
+
+
+def _remove_upload(image_path: str | None):
+    if not image_path:
+        return
+    path = (UPLOADS_DIR / image_path).resolve()
+    if UPLOADS_DIR.resolve() in path.parents and path.exists():
+        path.unlink()
 
 
 @app.get("/api/goals")

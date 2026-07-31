@@ -134,6 +134,48 @@ def verify_pin(conn, user_id: int, pin: str) -> bool:
     return row["pin_hash"] == _hash_pin(pin)
 
 
+def user_has_pin(conn, user_id: int) -> bool:
+    row = conn.execute("SELECT pin_hash FROM users WHERE id = ?", (user_id,)).fetchone()
+    return bool(row and row["pin_hash"] is not None)
+
+
+def rename_user(conn, user_id: int, name: str) -> dict:
+    conn.execute("UPDATE users SET name = ? WHERE id = ?", (name, user_id))
+    return get_user(conn, user_id)
+
+
+def set_pin(conn, user_id: int, new_pin: str | None) -> None:
+    conn.execute(
+        "UPDATE users SET pin_hash = ? WHERE id = ?",
+        (_hash_pin(new_pin) if new_pin else None, user_id),
+    )
+
+
+def delete_user(conn, user_id: int) -> None:
+    conn.execute("DELETE FROM entries WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM goals WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM profile WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM meal_plan WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+def get_image_paths_for_user(conn, user_id: int) -> list:
+    rows = conn.execute("SELECT image_path FROM entries WHERE user_id = ?", (user_id,)).fetchall()
+    return [r["image_path"] for r in rows if r["image_path"]]
+
+
+def delete_entries_for_date(conn, user_id: int, date_str: str) -> list:
+    rows = conn.execute(
+        "SELECT image_path FROM entries WHERE user_id = ? AND substr(created_at, 1, 10) = ?",
+        (user_id, date_str),
+    ).fetchall()
+    conn.execute(
+        "DELETE FROM entries WHERE user_id = ? AND substr(created_at, 1, 10) = ?",
+        (user_id, date_str),
+    )
+    return [r["image_path"] for r in rows if r["image_path"]]
+
+
 # ---------- entries ----------
 
 def insert_entry(conn, *, user_id, created_at, meal_type, source, items_json,

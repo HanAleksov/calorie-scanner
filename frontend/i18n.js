@@ -116,6 +116,27 @@ const TRANSLATIONS = {
 
     logged_kcal: "Logged {kcal} kcal ({confidence} confidence)",
     something_wrong: "Something went wrong",
+
+    settings_title: "Settings",
+    change_pin: "Change PIN",
+    old_pin: "Current PIN",
+    new_pin_optional: "New 4-digit PIN (leave blank to remove)",
+    save_pin: "Save PIN",
+    reset_today_btn: "Reset Today's Log",
+    reset_today_confirm: "Delete everything logged today? This can't be undone.",
+    delete_profile_btn: "Delete My Profile",
+    delete_profile_confirm: "Delete your profile and everything you've logged? This can't be undone.",
+    close: "Close",
+    adjust_portions: "Adjust portions (grams)",
+    recalculate_btn: "Recalculate from grams",
+    name_updated: "Name updated",
+    pin_updated: "PIN updated",
+    pin_removed: "PIN removed",
+    wrong_old_pin: "Current PIN is incorrect",
+    needs_old_pin: "Enter your current PIN first",
+    today_reset: "Today's log has been cleared",
+    profile_deleted: "Profile deleted",
+    portions_recalculated: "Recalculated from your corrected portions",
   },
 
   bg: {
@@ -235,11 +256,32 @@ const TRANSLATIONS = {
 
     logged_kcal: "Записани {kcal} кал. (точност: {confidence})",
     something_wrong: "Нещо се обърка",
+
+    settings_title: "Настройки",
+    change_pin: "Смяна на ПИН",
+    old_pin: "Текущ ПИН",
+    new_pin_optional: "Нов 4-цифрен ПИН (остави празно за премахване)",
+    save_pin: "Запази ПИН",
+    reset_today_btn: "Изчисти дневника за днес",
+    reset_today_confirm: "Да изтрия ли всичко записано днес? Това не може да се отмени.",
+    delete_profile_btn: "Изтрий моя профил",
+    delete_profile_confirm: "Да изтрия ли профила ти и всичко записано в него? Това не може да се отмени.",
+    close: "Затвори",
+    adjust_portions: "Коригирай грамажа",
+    recalculate_btn: "Преизчисли от грамажа",
+    name_updated: "Името е обновено",
+    pin_updated: "ПИН-ът е обновен",
+    pin_removed: "ПИН-ът е премахнат",
+    wrong_old_pin: "Текущият ПИН е грешен",
+    needs_old_pin: "Първо въведи текущия си ПИН",
+    today_reset: "Дневникът за днес е изчистен",
+    profile_deleted: "Профилът е изтрит",
+    portions_recalculated: "Преизчислено според коригирания грамаж",
   },
 };
 
 function t(key, vars) {
-  const lang = localStorage.getItem("lang") || "en";
+  const lang = currentLang();
   let str = (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || TRANSLATIONS.en[key] || key;
   if (vars) {
     for (const [k, v] of Object.entries(vars)) {
@@ -250,7 +292,7 @@ function t(key, vars) {
 }
 
 function currentLang() {
-  return localStorage.getItem("lang") || "en";
+  return localStorage.getItem("lang") || "bg";
 }
 
 function applyStaticTranslations() {

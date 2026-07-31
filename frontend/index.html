@@ -21,6 +21,7 @@
 <!-- USER PICKER (shown before anything else if no profile is stored) -->
 <div class="user-gate" id="userGate">
   <div class="user-gate-card">
+    <button class="icon-btn" id="langBtnGate" style="float:right">BG</button>
     <div class="logo-mark" style="font-size:34px">🍽</div>
     <h1 data-i18n="who_is_this">Who's logging?</h1>
 
@@ -49,6 +50,7 @@
 <header>
   <h1><span class="logo-mark">🍽</span> <span data-i18n="app_name">Calorie Scanner</span></h1>
   <div class="actions">
+    <button class="icon-btn" id="settingsBtn" title="Settings">⚙️</button>
     <button class="icon-btn" id="switchUserBtn" title="Switch user">👤</button>
     <button class="icon-btn" id="langBtn">EN</button>
     <button class="icon-btn" id="installBtn" style="display:none">⬇</button>
@@ -265,6 +267,13 @@
         <option value="snack" data-i18n="meal_snack">Snack</option>
       </select>
     </div>
+
+    <div id="editItemsSection" class="hidden">
+      <label data-i18n="adjust_portions">Adjust portions (grams)</label>
+      <div id="editItemsList" class="edit-items-list"></div>
+      <button class="btn btn-secondary" id="recalcPortionsBtn" style="width:100%;margin-bottom:12px" data-i18n="recalculate_btn">Recalculate from grams</button>
+    </div>
+
     <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="editCals"></div>
     <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="editProtein"></div>
     <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="editCarbs"></div>
@@ -272,6 +281,35 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" id="editCancelBtn" data-i18n="cancel">Cancel</button>
       <button class="btn btn-primary" id="editSaveBtn" data-i18n="save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="modal-backdrop hidden" id="settingsModal">
+  <div class="modal-sheet">
+    <h2 data-i18n="settings_title">Settings</h2>
+
+    <div class="field"><label data-i18n="your_name">Your name</label><input type="text" id="settingsName"></div>
+    <button class="btn btn-secondary" id="settingsSaveNameBtn" style="width:100%" data-i18n="save">Save</button>
+
+    <hr class="settings-divider">
+
+    <h3 class="settings-subtitle" data-i18n="change_pin">Change PIN</h3>
+    <div class="field hidden" id="settingsOldPinField"><label data-i18n="old_pin">Current PIN</label><input type="text" inputmode="numeric" maxlength="4" id="settingsOldPin" data-i18n-ph="pin_ph" placeholder="····"></div>
+    <div class="field"><label data-i18n="new_pin_optional">New 4-digit PIN (leave blank to remove)</label><input type="text" inputmode="numeric" maxlength="4" id="settingsNewPin" data-i18n-ph="pin_ph" placeholder="····"></div>
+    <button class="btn btn-secondary" id="settingsSavePinBtn" style="width:100%" data-i18n="save_pin">Save PIN</button>
+
+    <hr class="settings-divider">
+
+    <button class="btn btn-secondary" id="resetTodayBtn" style="width:100%" data-i18n="reset_today_btn">Reset Today's Log</button>
+
+    <hr class="settings-divider">
+
+    <button class="btn btn-danger" id="deleteProfileBtn" style="width:100%" data-i18n="delete_profile_btn">Delete My Profile</button>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="settingsCloseBtn" style="width:100%" data-i18n="close">Close</button>
     </div>
   </div>
 </div>

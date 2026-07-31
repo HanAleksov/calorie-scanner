@@ -68,6 +68,18 @@
 .user-list button:active { background: var(--surface-2); transform: scale(0.98); }
 .user-list button .pin-lock { font-size: 12px; opacity: 0.5; }
 
+/* Settings modal */
+.settings-divider { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+.settings-subtitle { font-size: 13.5px; font-weight: 700; margin: 0 0 10px; }
+.btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); width: 100%; }
+.btn-danger:active { background: var(--danger); color: white; }
+
+/* Edit-modal item portion rows */
+.edit-items-list { margin-bottom: 6px; }
+.edit-item-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.edit-item-row .item-name { flex: 1; font-size: 13px; color: var(--text-dim); }
+.edit-item-row input { width: 84px; flex-shrink: 0; }
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
