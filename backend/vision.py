@@ -51,14 +51,19 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
-def analyze_meal_photo(image_bytes: bytes, media_type: str) -> dict:
+LANGUAGE_NAMES = {"en": "English", "bg": "Bulgarian"}
+
+
+def analyze_meal_photo(image_bytes: bytes, media_type: str, lang: str = "en") -> dict:
     client = _client()
     image_b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+    lang_name = LANGUAGE_NAMES.get(lang, "English")
+    system = SYSTEM_PROMPT + f"\n\nWrite every text value (food item names) in {lang_name}."
 
     response = client.messages.create(
         model=MODEL,
         max_tokens=2048,
-        system=SYSTEM_PROMPT,
+        system=system,
         output_config={"format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
         messages=[
             {

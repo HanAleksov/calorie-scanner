@@ -18,9 +18,39 @@
 </head>
 <body>
 
+<!-- USER PICKER (shown before anything else if no profile is stored) -->
+<div class="user-gate" id="userGate">
+  <div class="user-gate-card">
+    <div class="logo-mark" style="font-size:34px">🍽</div>
+    <h1 data-i18n="who_is_this">Who's logging?</h1>
+
+    <div id="userList" class="user-list"></div>
+
+    <button class="btn btn-secondary" id="newPersonBtn" style="width:100%" data-i18n="new_person">New person</button>
+
+    <div id="newPersonForm" class="hidden" style="margin-top:14px">
+      <div class="field"><label data-i18n="your_name">Your name</label><input type="text" id="newUserName" data-i18n-ph="your_name_ph" placeholder="e.g. Aleks"></div>
+      <div class="field"><label data-i18n="pin_optional">4-digit PIN (optional)</label><input type="text" inputmode="numeric" maxlength="4" id="newUserPin" data-i18n-ph="pin_ph" placeholder="····"></div>
+      <button class="btn btn-primary" id="createUserBtn" style="width:100%" data-i18n="create_profile">Create Profile</button>
+    </div>
+
+    <div id="pinForm" class="hidden" style="margin-top:14px">
+      <p id="pinForLabel" style="font-size:13px;color:var(--text-dim)"></p>
+      <div class="field"><input type="text" inputmode="numeric" maxlength="4" id="pinInput" data-i18n-ph="pin_ph" placeholder="····"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="pinBackBtn" data-i18n="back">Back</button>
+        <button class="btn btn-primary" id="pinUnlockBtn" data-i18n="unlock">Unlock</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="appRoot" class="hidden">
 <header>
-  <h1><span class="logo-mark">🍽</span> Calorie Scanner</h1>
+  <h1><span class="logo-mark">🍽</span> <span data-i18n="app_name">Calorie Scanner</span></h1>
   <div class="actions">
+    <button class="icon-btn" id="switchUserBtn" title="Switch user">👤</button>
+    <button class="icon-btn" id="langBtn">EN</button>
     <button class="icon-btn" id="installBtn" style="display:none">⬇</button>
     <button class="icon-btn" id="themeBtn">🌓</button>
   </div>
@@ -28,7 +58,7 @@
 
 <main>
   <div id="iosHint" class="hint-banner" style="display:none">
-    <span>Install this app: tap Share, then "Add to Home Screen".</span>
+    <span data-i18n="ios_hint">Install this app: tap Share, then "Add to Home Screen".</span>
     <button id="iosHintClose">✕</button>
   </div>
 
@@ -42,26 +72,26 @@
         </svg>
         <div class="ring-center">
           <div class="ring-value" id="ringCalsLeft">0</div>
-          <div class="ring-label">kcal left</div>
+          <div class="ring-label" data-i18n="kcal_left">kcal left</div>
         </div>
       </div>
       <div class="hero-stats">
-        <div class="hero-stat"><span id="totalCals">0</span><small>eaten</small></div>
-        <div class="hero-stat"><span id="calGoalDisplay">2200</span><small>goal</small></div>
+        <div class="hero-stat"><span id="totalCals">0</span><small data-i18n="eaten">eaten</small></div>
+        <div class="hero-stat"><span id="calGoalDisplay">2200</span><small data-i18n="goal">goal</small></div>
       </div>
       <div class="macros">
         <div class="macro protein">
-          <div class="label">Protein</div>
+          <div class="label" data-i18n="protein">Protein</div>
           <div class="value" id="proteinVal">0g</div>
           <div class="bar"><div class="fill" id="proteinFill" style="width:0%"></div></div>
         </div>
         <div class="macro carbs">
-          <div class="label">Carbs</div>
+          <div class="label" data-i18n="carbs">Carbs</div>
           <div class="value" id="carbsVal">0g</div>
           <div class="bar"><div class="fill" id="carbsFill" style="width:0%"></div></div>
         </div>
         <div class="macro fat">
-          <div class="label">Fat</div>
+          <div class="label" data-i18n="fat">Fat</div>
           <div class="value" id="fatVal">0g</div>
           <div class="bar"><div class="fill" id="fatFill" style="width:0%"></div></div>
         </div>
@@ -70,14 +100,14 @@
 
     <div class="card">
       <select class="meal-type-select" id="mealTypeSelect">
-        <option value="breakfast">Breakfast</option>
-        <option value="lunch">Lunch</option>
-        <option value="dinner">Dinner</option>
-        <option value="snack" selected>Snack</option>
+        <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
+        <option value="lunch" data-i18n="meal_lunch">Lunch</option>
+        <option value="dinner" data-i18n="meal_dinner">Dinner</option>
+        <option value="snack" selected data-i18n="meal_snack">Snack</option>
       </select>
       <div class="add-meal-actions">
-        <button class="btn btn-primary" id="takePhotoBtn"><span class="btn-icon">📷</span> Add Photo</button>
-        <button class="btn btn-secondary" id="manualEntryBtn"><span class="btn-icon">✏️</span> Manual</button>
+        <button class="btn btn-primary" id="takePhotoBtn"><span class="btn-icon">📷</span> <span data-i18n="add_photo">Add Photo</span></button>
+        <button class="btn btn-secondary" id="manualEntryBtn"><span class="btn-icon">✏️</span> <span data-i18n="manual">Manual</span></button>
       </div>
       <input type="file" id="photoInput" accept="image/*" capture="environment">
     </div>
@@ -90,7 +120,7 @@
   <!-- HISTORY -->
   <section class="tab-panel" id="tab-history">
     <div class="card">
-      <h2 class="section-title">Last 14 days</h2>
+      <h2 class="section-title" data-i18n="history_title">Last 14 days</h2>
       <div id="historyList"></div>
     </div>
   </section>
@@ -98,15 +128,15 @@
   <!-- PLAN -->
   <section class="tab-panel" id="tab-plan">
     <div class="card">
-      <h2 class="section-title">Your Profile</h2>
+      <h2 class="section-title" data-i18n="profile_title">Your Profile</h2>
       <div class="unit-toggle">
-        <button class="unit-btn active" data-units="metric">Metric</button>
-        <button class="unit-btn" data-units="imperial">Imperial</button>
+        <button class="unit-btn active" data-units="metric" data-i18n="metric">Metric</button>
+        <button class="unit-btn" data-units="imperial" data-i18n="imperial">Imperial</button>
       </div>
 
       <div class="field-row">
         <div class="field">
-          <label id="heightLabel">Height (cm)</label>
+          <label id="heightLabel" data-i18n="height_cm">Height (cm)</label>
           <input type="number" id="heightCm" placeholder="175">
         </div>
         <div class="field imperial-only" style="display:none">
@@ -114,101 +144,111 @@
           <input type="number" id="heightIn" placeholder="in">
         </div>
         <div class="field">
-          <label id="weightLabel">Weight (kg)</label>
+          <label id="weightLabel" data-i18n="weight_kg">Weight (kg)</label>
           <input type="number" id="weightKg" placeholder="75">
         </div>
       </div>
 
       <div class="field-row">
-        <div class="field"><label>Age</label><input type="number" id="age" placeholder="30"></div>
+        <div class="field"><label data-i18n="age">Age</label><input type="number" id="age" placeholder="30"></div>
         <div class="field">
-          <label>Sex</label>
+          <label data-i18n="sex">Sex</label>
           <select id="sex">
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="other">Other</option>
+            <option value="male" data-i18n="sex_male">Male</option>
+            <option value="female" data-i18n="sex_female">Female</option>
+            <option value="other" data-i18n="sex_other">Other</option>
           </select>
         </div>
       </div>
 
       <div class="field">
-        <label>Activity level</label>
+        <label data-i18n="activity_level">Activity level</label>
         <select id="activityLevel">
-          <option value="sedentary">Sedentary — desk job, little exercise</option>
-          <option value="light">Light — exercise 1-3 days/week</option>
-          <option value="moderate" selected>Moderate — exercise 3-5 days/week</option>
-          <option value="active">Active — hard exercise 6-7 days/week</option>
-          <option value="very_active">Very active — physical job + training</option>
+          <option value="sedentary" data-i18n="activity_sedentary">Sedentary — desk job, little exercise</option>
+          <option value="light" data-i18n="activity_light">Light — exercise 1-3 days/week</option>
+          <option value="moderate" selected data-i18n="activity_moderate">Moderate — exercise 3-5 days/week</option>
+          <option value="active" data-i18n="activity_active">Active — hard exercise 6-7 days/week</option>
+          <option value="very_active" data-i18n="activity_very_active">Very active — physical job + training</option>
         </select>
       </div>
 
       <div class="field">
-        <label>Goal</label>
+        <label data-i18n="goal_label">Goal</label>
         <select id="goalType">
-          <option value="lose">Lose weight</option>
-          <option value="maintain">Maintain weight</option>
-          <option value="gain">Gain weight / muscle</option>
+          <option value="lose" data-i18n="goal_lose">Lose weight</option>
+          <option value="maintain" data-i18n="goal_maintain">Maintain weight</option>
+          <option value="gain" data-i18n="goal_gain">Gain weight / muscle</option>
         </select>
       </div>
 
       <div class="field">
-        <label>Dietary preferences / restrictions (optional)</label>
-        <input type="text" id="dietaryNotes" placeholder="e.g. vegetarian, no nuts, high-protein">
+        <label data-i18n="dietary_notes">Dietary preferences / restrictions (optional)</label>
+        <input type="text" id="dietaryNotes" data-i18n-ph="dietary_notes_ph" placeholder="e.g. vegetarian, no nuts, high-protein">
       </div>
 
-      <button class="btn btn-primary" id="calcGoalsBtn" style="width:100%">Calculate My Goals</button>
+      <button class="btn btn-primary" id="calcGoalsBtn" style="width:100%" data-i18n="calc_goals_btn">Calculate My Goals</button>
     </div>
 
     <div class="card" id="suggestedGoalsCard" style="display:none">
-      <h2 class="section-title">Suggested Daily Targets</h2>
+      <h2 class="section-title" data-i18n="suggested_targets">Suggested Daily Targets</h2>
       <div class="target-grid">
-        <div class="target-cell"><div class="target-value" id="sugCalories">–</div><div class="target-label">Calories</div></div>
-        <div class="target-cell"><div class="target-value" id="sugProtein">–</div><div class="target-label">Protein</div></div>
-        <div class="target-cell"><div class="target-value" id="sugCarbs">–</div><div class="target-label">Carbs</div></div>
-        <div class="target-cell"><div class="target-value" id="sugFat">–</div><div class="target-label">Fat</div></div>
+        <div class="target-cell"><div class="target-value" id="sugCalories">–</div><div class="target-label" data-i18n="calories">Calories</div></div>
+        <div class="target-cell"><div class="target-value" id="sugProtein">–</div><div class="target-label" data-i18n="protein">Protein</div></div>
+        <div class="target-cell"><div class="target-value" id="sugCarbs">–</div><div class="target-label" data-i18n="carbs">Carbs</div></div>
+        <div class="target-cell"><div class="target-value" id="sugFat">–</div><div class="target-label" data-i18n="fat">Fat</div></div>
       </div>
       <p class="explain-text" id="sugExplain"></p>
-      <button class="btn btn-primary" id="applyGoalsBtn" style="width:100%">Apply These Goals</button>
+      <button class="btn btn-primary" id="applyGoalsBtn" style="width:100%" data-i18n="apply_goals_btn">Apply These Goals</button>
     </div>
 
     <div class="card">
       <div class="section-title-row">
-        <h2 class="section-title">AI Meal Plan</h2>
+        <h2 class="section-title" data-i18n="ai_meal_plan">AI Meal Plan</h2>
       </div>
-      <p class="explain-text">Generates one full day of meals built around your current goals.</p>
-      <button class="btn btn-primary" id="genPlanBtn" style="width:100%">Generate My Meal Plan</button>
+      <p class="explain-text" data-i18n="ai_meal_plan_desc">Generates one full day of meals built around your current goals.</p>
+      <button class="btn btn-primary" id="genPlanBtn" style="width:100%" data-i18n="gen_plan_btn">Generate My Meal Plan</button>
       <div id="mealPlanResult"></div>
     </div>
 
     <details class="card manual-goals-details">
-      <summary>Manual goal override</summary>
-      <div class="field"><label>Daily Calories</label><input type="number" id="goalCalories"></div>
-      <div class="field"><label>Protein (g)</label><input type="number" id="goalProtein"></div>
-      <div class="field"><label>Carbs (g)</label><input type="number" id="goalCarbs"></div>
-      <div class="field"><label>Fat (g)</label><input type="number" id="goalFat"></div>
-      <button class="btn btn-secondary" id="saveGoalsBtn" style="width:100%">Save Manual Goals</button>
+      <summary data-i18n="manual_override">Manual goal override</summary>
+      <div class="field"><label data-i18n="daily_calories">Daily Calories</label><input type="number" id="goalCalories"></div>
+      <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="goalProtein"></div>
+      <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="goalCarbs"></div>
+      <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="goalFat"></div>
+      <button class="btn btn-secondary" id="saveGoalsBtn" style="width:100%" data-i18n="save_manual_goals">Save Manual Goals</button>
     </details>
   </section>
 </main>
 
 <nav class="tabbar">
-  <button class="tab-btn active" data-tab="today"><span class="tab-icon">📋</span>Today</button>
-  <button class="tab-btn" data-tab="history"><span class="tab-icon">📈</span>History</button>
-  <button class="tab-btn" data-tab="plan"><span class="tab-icon">🧠</span>Plan</button>
+  <button class="tab-btn active" data-tab="today"><span class="tab-icon">📋</span><span data-i18n="tab_today">Today</span></button>
+  <button class="tab-btn" data-tab="history"><span class="tab-icon">📈</span><span data-i18n="tab_history">History</span></button>
+  <button class="tab-btn" data-tab="plan"><span class="tab-icon">🧠</span><span data-i18n="tab_plan">Plan</span></button>
 </nav>
+</div>
+
+<!-- Welcome modal -->
+<div class="modal-backdrop hidden" id="welcomeModal">
+  <div class="modal-sheet">
+    <h2 data-i18n="welcome_title">Welcome 👋</h2>
+    <p class="explain-text" id="welcomeBody" style="font-size:13.5px;line-height:1.6"></p>
+    <button class="btn btn-primary" id="welcomeDismissBtn" style="width:100%" data-i18n="welcome_dismiss">Got it, let's go</button>
+  </div>
+</div>
 
 <!-- Manual entry modal -->
 <div class="modal-backdrop hidden" id="manualModal">
   <div class="modal-sheet">
-    <h2>Manual Entry</h2>
-    <div class="field"><label>Description</label><input type="text" id="manualDesc" placeholder="e.g. Protein shake"></div>
-    <div class="field"><label>Calories</label><input type="number" id="manualCals"></div>
-    <div class="field"><label>Protein (g)</label><input type="number" id="manualProtein" value="0"></div>
-    <div class="field"><label>Carbs (g)</label><input type="number" id="manualCarbs" value="0"></div>
-    <div class="field"><label>Fat (g)</label><input type="number" id="manualFat" value="0"></div>
+    <h2 data-i18n="manual_entry_title">Manual Entry</h2>
+    <div class="field"><label data-i18n="description">Description</label><input type="text" id="manualDesc" data-i18n-ph="description_ph" placeholder="e.g. Protein shake"></div>
+    <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="manualCals"></div>
+    <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="manualProtein" value="0"></div>
+    <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="manualCarbs" value="0"></div>
+    <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="manualFat" value="0"></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="manualCancelBtn">Cancel</button>
-      <button class="btn btn-primary" id="manualSaveBtn">Save</button>
+      <button class="btn btn-secondary" id="manualCancelBtn" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="manualSaveBtn" data-i18n="save">Save</button>
     </div>
   </div>
 </div>
@@ -216,26 +256,27 @@
 <!-- Edit entry modal -->
 <div class="modal-backdrop hidden" id="editModal">
   <div class="modal-sheet">
-    <h2>Edit Entry</h2>
-    <div class="field"><label>Meal type</label>
+    <h2 data-i18n="edit_entry_title">Edit Entry</h2>
+    <div class="field"><label data-i18n="meal_type">Meal type</label>
       <select class="meal-type-select" id="editMealType">
-        <option value="breakfast">Breakfast</option>
-        <option value="lunch">Lunch</option>
-        <option value="dinner">Dinner</option>
-        <option value="snack">Snack</option>
+        <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
+        <option value="lunch" data-i18n="meal_lunch">Lunch</option>
+        <option value="dinner" data-i18n="meal_dinner">Dinner</option>
+        <option value="snack" data-i18n="meal_snack">Snack</option>
       </select>
     </div>
-    <div class="field"><label>Calories</label><input type="number" id="editCals"></div>
-    <div class="field"><label>Protein (g)</label><input type="number" id="editProtein"></div>
-    <div class="field"><label>Carbs (g)</label><input type="number" id="editCarbs"></div>
-    <div class="field"><label>Fat (g)</label><input type="number" id="editFat"></div>
+    <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="editCals"></div>
+    <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="editProtein"></div>
+    <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="editCarbs"></div>
+    <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="editFat"></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="editCancelBtn">Cancel</button>
-      <button class="btn btn-primary" id="editSaveBtn">Save</button>
+      <button class="btn btn-secondary" id="editCancelBtn" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="editSaveBtn" data-i18n="save">Save</button>
     </div>
   </div>
 </div>
 
+<script src="/i18n.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -63,8 +63,13 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
-def generate_meal_plan(targets: dict, dietary_notes: str = "") -> dict:
+LANGUAGE_NAMES = {"en": "English", "bg": "Bulgarian"}
+
+
+def generate_meal_plan(targets: dict, dietary_notes: str = "", lang: str = "en") -> dict:
     client = _client()
+    lang_name = LANGUAGE_NAMES.get(lang, "English")
+    system = SYSTEM_PROMPT + f"\n\nWrite every text value (meal names, descriptions, rationale, notes) in {lang_name}."
     prompt = (
         f"Daily targets: {targets['target_calories']} kcal, "
         f"{targets['protein_g']}g protein, {targets['carbs_g']}g carbs, {targets['fat_g']}g fat.\n"
@@ -74,7 +79,7 @@ def generate_meal_plan(targets: dict, dietary_notes: str = "") -> dict:
     response = client.messages.create(
         model=MODEL,
         max_tokens=3072,
-        system=SYSTEM_PROMPT,
+        system=system,
         output_config={"format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
         messages=[{"role": "user", "content": prompt}],
     )

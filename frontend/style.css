@@ -46,6 +46,28 @@
 
 * { box-sizing: border-box; }
 
+.hidden { display: none !important; }
+
+/* User gate (profile picker) */
+.user-gate {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; background: var(--bg);
+  padding-top: calc(24px + var(--safe-top));
+  padding-bottom: calc(24px + var(--safe-bottom));
+}
+.user-gate-card { max-width: 380px; width: 100%; text-align: center; }
+.user-gate-card h1 { font-size: 20px; margin: 14px 0 20px; letter-spacing: -0.01em; }
+.user-gate-card .field { text-align: left; }
+.user-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.user-list button {
+  padding: 13px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 14.5px; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; box-shadow: var(--shadow);
+}
+.user-list button:active { background: var(--surface-2); transform: scale(0.98); }
+.user-list button .pin-lock { font-size: 12px; opacity: 0.5; }
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
