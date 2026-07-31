@@ -23,3 +23,23 @@ CREATE TABLE IF NOT EXISTS goals (
 
 INSERT OR IGNORE INTO goals (id, calories, protein_g, carbs_g, fat_g)
 VALUES (1, 2200, 120, 220, 70);
+
+CREATE TABLE IF NOT EXISTS profile (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    height_cm REAL,
+    weight_kg REAL,
+    age INTEGER,
+    sex TEXT,                    -- male|female|other
+    activity_level TEXT,         -- sedentary|light|moderate|active|very_active
+    goal_type TEXT,              -- lose|maintain|gain
+    target_rate_kg_week REAL,
+    dietary_notes TEXT
+);
+
+INSERT OR IGNORE INTO profile (id) VALUES (1);
+
+CREATE TABLE IF NOT EXISTS meal_plan (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    plan_json TEXT,
+    generated_at TEXT
+);

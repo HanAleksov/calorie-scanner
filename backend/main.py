@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
 import json
 
 import db
+import meal_plan as meal_plan_module
+import nutrition
 import vision
 
 BACKEND_DIR = Path(__file__).parent
@@ -191,6 +193,87 @@ def set_goals(payload: dict):
             carbs_g=payload["carbs_g"],
             fat_g=payload["fat_g"],
         )
+
+
+ALLOWED_SEX = {"male", "female", "other"}
+ALLOWED_ACTIVITY = {"sedentary", "light", "moderate", "active", "very_active"}
+ALLOWED_GOAL_TYPE = {"lose", "maintain", "gain"}
+
+
+def _validate_profile_payload(payload: dict):
+    if "sex" in payload and payload["sex"] not in ALLOWED_SEX:
+        raise HTTPException(400, f"sex must be one of {sorted(ALLOWED_SEX)}")
+    if "activity_level" in payload and payload["activity_level"] not in ALLOWED_ACTIVITY:
+        raise HTTPException(400, f"activity_level must be one of {sorted(ALLOWED_ACTIVITY)}")
+    if "goal_type" in payload and payload["goal_type"] not in ALLOWED_GOAL_TYPE:
+        raise HTTPException(400, f"goal_type must be one of {sorted(ALLOWED_GOAL_TYPE)}")
+
+
+@app.get("/api/profile")
+def get_profile():
+    with db.get_conn() as conn:
+        return db.get_profile(conn)
+
+
+@app.put("/api/profile")
+def set_profile(payload: dict):
+    allowed = {"height_cm", "weight_kg", "age", "sex", "activity_level",
+               "goal_type", "target_rate_kg_week", "dietary_notes"}
+    fields = {k: v for k, v in payload.items() if k in allowed}
+    _validate_profile_payload(fields)
+    with db.get_conn() as conn:
+        return db.set_profile(conn, fields)
+
+
+@app.post("/api/goals/suggested")
+def suggested_goals(payload: dict):
+    required = {"height_cm", "weight_kg", "age", "sex", "activity_level", "goal_type"}
+    if not required.issubset(payload):
+        raise HTTPException(400, f"payload must include {sorted(required)}")
+    _validate_profile_payload(payload)
+    try:
+        return nutrition.calculate_targets(payload)
+    except (TypeError, ValueError) as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/meal-plan")
+def create_meal_plan():
+    with db.get_conn() as conn:
+        profile = db.get_profile(conn)
+        goals = db.get_goals(conn)
+
+    required = ["height_cm", "weight_kg", "age", "sex", "activity_level", "goal_type"]
+    if not profile or any(profile.get(f) is None for f in required):
+        raise HTTPException(400, "complete your profile first (height, weight, age, sex, activity, goal)")
+
+    targets = {
+        "target_calories": goals["calories"],
+        "protein_g": goals["protein_g"],
+        "carbs_g": goals["carbs_g"],
+        "fat_g": goals["fat_g"],
+    }
+    try:
+        plan = meal_plan_module.generate_meal_plan(targets, profile.get("dietary_notes") or "")
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+    with db.get_conn() as conn:
+        db.set_meal_plan(
+            conn,
+            plan_json=json.dumps(plan),
+            generated_at=datetime.now().isoformat(timespec="seconds"),
+        )
+    return {"generated_at": datetime.now().isoformat(timespec="seconds"), **plan}
+
+
+@app.get("/api/meal-plan")
+def get_meal_plan():
+    with db.get_conn() as conn:
+        row = db.get_meal_plan(conn)
+    if not row or not row.get("plan_json"):
+        return {"plan": None}
+    return {"generated_at": row["generated_at"], **json.loads(row["plan_json"])}
 
 
 @app.get("/uploads/{filename}")

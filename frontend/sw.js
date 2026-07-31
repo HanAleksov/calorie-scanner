@@ -1,8 +1,6 @@
-const CACHE_NAME = "calorie-scanner-v1";
-const STATIC_ASSETS = [
-  "/",
-  "/style.css",
-  "/app.js",
+const CACHE_NAME = "calorie-scanner-v3";
+const APP_SHELL = ["/", "/style.css", "/app.js"];
+const CACHE_FIRST_ASSETS = [
   "/manifest.json",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -11,7 +9,15 @@ const STATIC_ASSETS = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        [...APP_SHELL, ...CACHE_FIRST_ASSETS].map((url) =>
+          fetch(url, { cache: "reload" }).then((res) => {
+            if (res.ok) return cache.put(url, res);
+          })
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
@@ -25,17 +31,37 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
-// Cache-first for static assets, network-only for API calls.
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/uploads/")) {
-    return; // let the network handle it directly
+    return; // always hit the network directly — this is live user data
   }
+
+  const isAppShell = APP_SHELL.includes(url.pathname);
+  if (isAppShell) {
+    // Network-first: always serve the latest UI when online; fall back to
+    // cache only when offline, so a shipped update is never stuck behind
+    // a stale cached shell.
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Cache-first for rarely-changing assets (icons, manifest).
   event.respondWith(
     caches.match(event.request).then((cached) => {
       if (cached) return cached;
       return fetch(event.request).then((response) => {
-        if (response.ok && event.request.method === "GET") {
+        if (response.ok) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }

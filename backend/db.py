@@ -87,3 +87,32 @@ def set_goals(conn, *, calories, protein_g, carbs_g, fat_g):
         (calories, protein_g, carbs_g, fat_g),
     )
     return get_goals(conn)
+
+
+def get_profile(conn):
+    row = conn.execute("SELECT * FROM profile WHERE id = 1").fetchone()
+    return dict(row) if row else None
+
+
+def set_profile(conn, fields: dict):
+    if not fields:
+        return get_profile(conn)
+    columns = ", ".join(f"{k} = ?" for k in fields)
+    values = list(fields.values())
+    conn.execute(f"UPDATE profile SET {columns} WHERE id = 1", values)
+    return get_profile(conn)
+
+
+def get_meal_plan(conn):
+    row = conn.execute("SELECT * FROM meal_plan WHERE id = 1").fetchone()
+    return dict(row) if row else None
+
+
+def set_meal_plan(conn, *, plan_json, generated_at):
+    conn.execute(
+        """INSERT INTO meal_plan (id, plan_json, generated_at) VALUES (1, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET plan_json = excluded.plan_json,
+                                          generated_at = excluded.generated_at""",
+        (plan_json, generated_at),
+    )
+    return get_meal_plan(conn)
