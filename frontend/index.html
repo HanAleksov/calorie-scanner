@@ -105,6 +105,7 @@
           <div class="wellness-label">💧 <span data-i18n="water_title">Water</span></div>
           <div class="wellness-value" id="waterVal">0/2000ml</div>
           <div class="wellness-actions">
+            <button class="chip-btn chip-btn-remove" id="removeWater250">-250ml</button>
             <button class="chip-btn" id="addWater250">+250ml</button>
             <button class="chip-btn" id="addWater500">+500ml</button>
           </div>
@@ -227,6 +228,7 @@
         <div class="target-cell"><div class="target-value" id="sugProtein">–</div><div class="target-label" data-i18n="protein">Protein</div></div>
         <div class="target-cell"><div class="target-value" id="sugCarbs">–</div><div class="target-label" data-i18n="carbs">Carbs</div></div>
         <div class="target-cell"><div class="target-value" id="sugFat">–</div><div class="target-label" data-i18n="fat">Fat</div></div>
+        <div class="target-cell"><div class="target-value" id="sugWater">–</div><div class="target-label" data-i18n="water_title">Water</div></div>
       </div>
       <p class="explain-text" id="sugExplain"></p>
       <button class="btn btn-primary" id="applyGoalsBtn" style="width:100%" data-i18n="apply_goals_btn">Apply These Goals</button>
@@ -275,6 +277,10 @@
     <h2 data-i18n="photo_review_title">Review Photo</h2>
     <div class="photo-preview-row" id="photoPreviewRow"></div>
     <button class="btn btn-secondary" id="addAngleBtn" style="width:100%" data-i18n="add_another_angle">+ Add another angle</button>
+    <div class="field">
+      <label data-i18n="photo_desc_label">Anything the AI should know? (optional)</label>
+      <textarea id="photoDescInput" rows="2" data-i18n-ph="photo_desc_placeholder" placeholder="e.g. no sugar, half portion, homemade"></textarea>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="photoCancelBtn" data-i18n="cancel">Cancel</button>
       <button class="btn btn-primary" id="photoAnalyzeBtn" data-i18n="analyze_btn">Analyze</button>

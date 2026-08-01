@@ -209,7 +209,7 @@ main { max-width: 540px; margin: 0 auto; padding: 16px; }
 .btn-icon { font-size: 15px; }
 input[type="file"] { display: none; }
 
-.meal-type-select, select, input[type="text"], input[type="number"] {
+.meal-type-select, select, input[type="text"], input[type="number"], textarea {
   width: 100%;
   padding: 11px 12px;
   border-radius: var(--radius-sm);
@@ -220,6 +220,7 @@ input[type="file"] { display: none; }
   font-family: inherit;
 }
 .meal-type-select { margin-bottom: 10px; }
+textarea { resize: vertical; }
 
 /* Entries */
 .entry { display: flex; gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--border); }
@@ -236,6 +237,7 @@ input[type="file"] { display: none; }
 :root[data-theme="dark"] .badge.low-confidence { background: #4a3510; color: #fbbf24; }
 .entry-items { font-size: 12px; color: var(--text-dim); margin: 3px 0; line-height: 1.4; }
 .entry-macros { font-size: 12px; color: var(--text-dim); }
+.entry-note { font-size: 12px; color: var(--text-dim); font-style: italic; margin-top: 3px; }
 .entry-actions { display: flex; gap: 4px; align-items: flex-start; }
 .entry-actions button { background: none; border: none; font-size: 15px; cursor: pointer; color: var(--text-dim); padding: 5px; border-radius: 8px; }
 .entry-actions button:active { background: var(--surface-2); }
@@ -283,7 +285,7 @@ nav.tabbar button.active .tab-icon { transform: translateY(-1px) scale(1.08); }
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; font-weight: 500; }
 
-.target-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
+.target-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); gap: 8px; margin-bottom: 4px; }
 .target-cell { text-align: center; background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px 4px; }
 .target-value { font-size: 16px; font-weight: 800; color: var(--accent); }
 .target-label { font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; margin-top: 3px; }
@@ -324,12 +326,13 @@ nav.tabbar button.active .tab-icon { transform: translateY(-1px) scale(1.08); }
 .wellness-item { flex: 1; text-align: center; }
 .wellness-label { font-size: 11.5px; color: var(--text-dim); font-weight: 600; margin-bottom: 6px; }
 .wellness-value { font-size: 13px; font-weight: 700; margin-top: 6px; }
-.wellness-actions { display: flex; gap: 6px; justify-content: center; margin-top: 2px; }
+.wellness-actions { display: flex; gap: 6px; justify-content: center; margin-top: 2px; flex-wrap: wrap; }
 .chip-btn {
   background: var(--surface-2); border: 1px solid var(--border); border-radius: 20px;
   padding: 5px 10px; font-size: 11.5px; font-weight: 600; color: var(--text); cursor: pointer;
 }
 .chip-btn:active { background: var(--accent-soft); }
+.chip-btn-remove { color: var(--text-dim); }
 .energy-dots { display: flex; justify-content: center; gap: 4px; }
 .energy-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--border); }
 .energy-dot.filled { background: var(--carbs); }

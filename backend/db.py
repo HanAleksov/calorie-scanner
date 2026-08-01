@@ -282,11 +282,18 @@ def set_goals(conn, user_id: int, *, calories, protein_g, carbs_g, fat_g, water_
 # ---------- water ----------
 
 def add_water(conn, user_id: int, ml: int, logged_at: str) -> int:
+    date_str = logged_at[:10]
+    if ml < 0:
+        # clamp so removing water can never push a day's total below 0
+        current = get_water_total_for_date(conn, user_id, date_str)
+        ml = max(ml, -current)
+        if ml == 0:
+            return current
     conn.execute(
         "INSERT INTO water_log (user_id, logged_at, ml) VALUES (?, ?, ?)",
         (user_id, logged_at, ml),
     )
-    return get_water_total_for_date(conn, user_id, logged_at[:10])
+    return get_water_total_for_date(conn, user_id, date_str)
 
 
 def get_water_total_for_date(conn, user_id: int, date_str: str) -> int:

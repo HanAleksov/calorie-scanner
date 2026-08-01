@@ -2,6 +2,7 @@ backend/.env
 backend/*.db
 backend/uploads/
 backend/server.log
+backend/SESSION_NOTES.md
 __pycache__/
 *.pyc
 .venv/

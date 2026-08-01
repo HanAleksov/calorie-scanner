@@ -78,8 +78,11 @@ def _client() -> anthropic.Anthropic:
 LANGUAGE_NAMES = {"en": "English", "bg": "Bulgarian"}
 
 
-def analyze_meal_photo(images: list[tuple[bytes, str]], lang: str = "en") -> dict:
-    """images: list of (image_bytes, media_type) tuples — one or two angles of the same meal."""
+def analyze_meal_photo(images: list[tuple[bytes, str]], lang: str = "en", user_note: str | None = None) -> dict:
+    """images: list of (image_bytes, media_type) tuples — one or two angles of the same meal.
+    user_note: optional free-text hint from the user (e.g. "no sugar", "half portion", "homemade
+    with olive oil") to help disambiguate what the photo alone can't show. Treat it as a helpful
+    hint, not ground truth — still estimate from what's visible."""
     client = _client()
     lang_name = LANGUAGE_NAMES.get(lang, "English")
     system = SYSTEM_PROMPT + f"\n\nWrite every text value (food item names) in {lang_name}."
@@ -100,6 +103,10 @@ def analyze_meal_photo(images: list[tuple[bytes, str]], lang: str = "en") -> dic
         if len(images) == 1
         else "Analyze these two photos of the same meal (different angles) and estimate calories, macros, and energy quality."
     )
+    if user_note:
+        prompt_text += (
+            f"\n\nThe user added this note about the meal, use it to refine your estimate: {user_note}"
+        )
 
     response = client.messages.create(
         model=MODEL,

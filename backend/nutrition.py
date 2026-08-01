@@ -22,7 +22,15 @@ deficit to preserve lean mass, lower end for maintenance/surplus.
 Fat: minimum ~0.6g/kg (roughly 20% of calories at maintenance) to support
 hormone production, per general sports-nutrition guidance; carbs fill the
 remainder of the calorie budget.
+
+Water: ~30-35ml/kg bodyweight/day is the commonly cited general hydration
+baseline (Mayo Clinic, EFSA-adjacent guidance). Extra fluid is added per
+activity tier to cover sweat losses from exercise, and a flat seasonal bonus
+is added during Sofia's hot months (Jun-Aug), when insensible/sweat losses
+run higher even without structured exercise.
 """
+
+import tzutil
 
 ACTIVITY_MULTIPLIERS = {
     "sedentary": 1.2,       # little or no exercise, desk job
@@ -39,6 +47,27 @@ DEFAULT_RATE_KG_PER_WEEK = {
     "maintain": 0.0,
     "gain": 0.25,
 }
+
+WATER_ML_PER_KG = 35  # general hydration baseline
+
+ACTIVITY_WATER_BONUS_ML = {
+    "sedentary": 0,
+    "light": 300,
+    "moderate": 500,
+    "active": 700,
+    "very_active": 900,
+}
+
+SUMMER_MONTHS = {6, 7, 8}  # Jun-Aug in Europe/Sofia
+SUMMER_WATER_BONUS_ML = 500
+
+
+def calculate_water_ml(weight_kg: float, activity_level: str, is_summer: bool) -> int:
+    total = weight_kg * WATER_ML_PER_KG
+    total += ACTIVITY_WATER_BONUS_ML.get(activity_level, 0)
+    if is_summer:
+        total += SUMMER_WATER_BONUS_ML
+    return round(total / 50) * 50  # round to a sane 50ml increment
 
 
 def calculate_bmr(weight_kg: float, height_cm: float, age: int, sex: str) -> float:
@@ -84,6 +113,9 @@ def calculate_targets(profile: dict) -> dict:
     carbs_kcal = max(target_calories - protein_kcal - fat_kcal, 0)
     carbs_g = carbs_kcal / 4
 
+    is_summer = tzutil.today_local().month in SUMMER_MONTHS
+    water_ml = calculate_water_ml(weight_kg, activity_level, is_summer)
+
     return {
         "bmr": round(bmr),
         "tdee": round(tdee),
@@ -91,6 +123,7 @@ def calculate_targets(profile: dict) -> dict:
         "protein_g": round(protein_g),
         "carbs_g": round(carbs_g),
         "fat_g": round(fat_g),
+        "water_ml": water_ml,
         "rate_kg_per_week": rate_kg_per_week,
         "method": "Mifflin-St Jeor BMR x activity multiplier, ISSN protein guidance (1.6-2.2 g/kg)",
     }

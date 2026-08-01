@@ -379,6 +379,7 @@ async function addWater(ml) {
   if (!res.ok) return;
   loadToday();
 }
+$("removeWater250").addEventListener("click", () => addWater(-250));
 $("addWater250").addEventListener("click", () => addWater(250));
 $("addWater500").addEventListener("click", () => addWater(500));
 
@@ -441,6 +442,7 @@ function renderEntries(entries) {
       const lowConf = e.confidence === "low" ? `<span class="badge low-confidence">${t("low_confidence")}</span>` : "";
       const energyBadge = e.energy_score != null ? `<span class="badge energy-badge">⚡${e.energy_score}/5</span>` : "";
       const time = e.created_at.slice(11, 16);
+      const noteLine = e.notes ? `<div class="entry-note">📝 ${escapeHtml(e.notes)}</div>` : "";
       return `
         <div class="entry" data-id="${e.id}">
           ${thumb}
@@ -448,6 +450,7 @@ function renderEntries(entries) {
             <div class="entry-title">${e.total_calories} kcal <span class="badge">${t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack")}</span> ${energyBadge} ${lowConf}</div>
             <div class="entry-items">${escapeHtml(itemNames)} · ${time}</div>
             <div class="entry-macros">P ${e.protein_g}g · C ${e.carbs_g}g · F ${e.fat_g}g</div>
+            ${noteLine}
           </div>
           <div class="entry-actions">
             <button class="edit-btn" title="${t("edit")}">✎</button>
@@ -591,6 +594,7 @@ function openPhotoReview() {
 function closePhotoReview() {
   $("photoReviewModal").classList.add("hidden");
   state.pendingPhotos = [];
+  $("photoDescInput").value = "";
 }
 $("photoCancelBtn").addEventListener("click", closePhotoReview);
 
@@ -606,6 +610,8 @@ $("photoAnalyzeBtn").addEventListener("click", async () => {
   if (state.pendingPhotos[1]) formData.append("image2", state.pendingPhotos[1]);
   formData.append("meal_type", $("mealTypeSelect").value);
   formData.append("lang", currentLang());
+  const desc = $("photoDescInput").value.trim();
+  if (desc) formData.append("description", desc);
 
   try {
     const res = await apiFetch("/api/log-meal", { method: "POST", body: formData });
@@ -746,6 +752,7 @@ $("calcGoalsBtn").addEventListener("click", async () => {
     $("sugProtein").textContent = targets.protein_g + "g";
     $("sugCarbs").textContent = targets.carbs_g + "g";
     $("sugFat").textContent = targets.fat_g + "g";
+    $("sugWater").textContent = targets.water_ml + "ml";
     $("sugExplain").textContent = t("goals_explain", {
       bmr: targets.bmr,
       tdee: targets.tdee,
@@ -777,6 +784,7 @@ $("applyGoalsBtn").addEventListener("click", async () => {
       protein_g: state.lastTargets.protein_g,
       carbs_g: state.lastTargets.carbs_g,
       fat_g: state.lastTargets.fat_g,
+      water_ml: state.lastTargets.water_ml,
     }),
   });
   toast(t("goals_applied"));

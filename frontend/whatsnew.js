@@ -1,6 +1,19 @@
-const CURRENT_APP_VERSION = 3;
+const CURRENT_APP_VERSION = 4;
 
 const WHATS_NEW = [
+  {
+    version: 4,
+    en: [
+      "💧 Remove water — a -250ml button, for when you tap +250 by mistake.",
+      "🌡️ Smarter water goal — your suggested daily water now factors in your activity level and Sofia's summer heat, not just bodyweight.",
+      "📝 Photo notes — add a quick note (e.g. \"no sugar\", \"half portion\") before analyzing a photo, to help the AI estimate more accurately.",
+    ],
+    bg: [
+      "💧 Премахване на вода — бутон -250мл, за когато натиснеш +250 по грешка.",
+      "🌡️ По-умна цел за вода — препоръчаната дневна вода вече взима предвид активността ти и лятната жега в София, не само теглото.",
+      "📝 Бележки към снимка — добави кратка бележка (напр. \"без захар\", \"половин порция\") преди анализ на снимка, за по-точна оценка от AI.",
+    ],
+  },
   {
     version: 3,
     en: [

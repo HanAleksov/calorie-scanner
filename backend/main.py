@@ -166,12 +166,14 @@ async def log_meal(
     image2: UploadFile | None = File(None),
     meal_type: str = Form("snack"),
     lang: str = Form("en"),
+    description: str = Form(""),
     user_id: int = Depends(current_user_id),
 ):
     if meal_type not in ALLOWED_MEAL_TYPES:
         raise HTTPException(400, f"meal_type must be one of {sorted(ALLOWED_MEAL_TYPES)}")
     if lang not in ALLOWED_LANGS:
         lang = "en"
+    description = description.strip()[:300]
     if image.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(400, "image must be JPEG, PNG, or WebP")
     if image2 is not None and image2.content_type not in ALLOWED_IMAGE_TYPES:
@@ -190,7 +192,7 @@ async def log_meal(
         images.append((image2_bytes, image2.content_type))
 
     try:
-        result = vision.analyze_meal_photo(images, lang=lang)
+        result = vision.analyze_meal_photo(images, lang=lang, user_note=description or None)
     except RuntimeError as e:
         raise HTTPException(502, str(e))
 
@@ -220,6 +222,7 @@ async def log_meal(
             image_path=filename,
             image_path2=filename2,
             energy_score=result.get("energy_score"),
+            notes=description or None,
         )
     return _entry_to_public(entry)
 
@@ -274,8 +277,8 @@ def today(user_id: int = Depends(current_user_id)):
 @app.post("/api/water")
 def log_water(payload: dict, user_id: int = Depends(current_user_id)):
     ml = payload.get("ml")
-    if not isinstance(ml, (int, float)) or ml <= 0:
-        raise HTTPException(400, "ml must be a positive number")
+    if not isinstance(ml, (int, float)) or ml == 0:
+        raise HTTPException(400, "ml must be a non-zero number")
     with db.get_conn() as conn:
         total = db.add_water(conn, user_id, int(ml), tzutil.now_local_naive().isoformat(timespec="seconds"))
     return {"water_ml": total}

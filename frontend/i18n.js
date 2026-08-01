@@ -154,6 +154,8 @@ const TRANSLATIONS = {
     add_another_angle: "+ Add another angle",
     analyze_btn: "Analyze",
     remove_photo: "Remove",
+    photo_desc_label: "Anything the AI should know? (optional)",
+    photo_desc_placeholder: "e.g. no sugar, half portion, homemade",
 
     tip_card_title: "Today's Tip",
     get_tip_btn: "Get a Tip for Today",
@@ -325,6 +327,8 @@ const TRANSLATIONS = {
     add_another_angle: "+ Добави друг ъгъл",
     analyze_btn: "Анализирай",
     remove_photo: "Премахни",
+    photo_desc_label: "Нещо, което AI трябва да знае? (по избор)",
+    photo_desc_placeholder: "напр. без захар, половин порция, домашно",
 
     tip_card_title: "Съвет за деня",
     get_tip_btn: "Вземи съвет за деня",
