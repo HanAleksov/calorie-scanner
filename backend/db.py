@@ -2,8 +2,9 @@ import hashlib
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
+
+import tzutil
 
 BACKEND_DIR = Path(__file__).parent
 DB_PATH = Path(os.environ.get("CALORIE_DB_PATH", BACKEND_DIR / "calorie_scanner.db"))
@@ -47,6 +48,16 @@ def _migrate(conn) -> None:
     # entries: pre-existing installs lack user_id — add it as a plain nullable column
     if _table_exists(conn, "entries") and "user_id" not in _table_columns(conn, "entries"):
         conn.execute("ALTER TABLE entries ADD COLUMN user_id INTEGER")
+
+    if _table_exists(conn, "entries"):
+        entry_cols = _table_columns(conn, "entries")
+        if "image_path2" not in entry_cols:
+            conn.execute("ALTER TABLE entries ADD COLUMN image_path2 TEXT")
+        if "energy_score" not in entry_cols:
+            conn.execute("ALTER TABLE entries ADD COLUMN energy_score REAL")
+
+    if _table_exists(conn, "goals") and "water_ml" not in _table_columns(conn, "goals"):
+        conn.execute("ALTER TABLE goals ADD COLUMN water_ml INTEGER NOT NULL DEFAULT 2000")
 
     # goals/profile/meal_plan changed primary key from a hardcoded id=1 to user_id —
     # that's a PK shape change SQLite can't ALTER in place, so move the old table
@@ -100,7 +111,7 @@ def _hash_pin(pin: str) -> str:
 def create_user(conn, name: str, pin: str | None = None) -> dict:
     cur = conn.execute(
         "INSERT INTO users (name, pin_hash, created_at) VALUES (?, ?, ?)",
-        (name, _hash_pin(pin) if pin else None, datetime.now().isoformat(timespec="seconds")),
+        (name, _hash_pin(pin) if pin else None, tzutil.now_local_naive().isoformat(timespec="seconds")),
     )
     user_id = cur.lastrowid
     conn.execute(
@@ -156,38 +167,54 @@ def delete_user(conn, user_id: int) -> None:
     conn.execute("DELETE FROM goals WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM profile WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM meal_plan WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM water_log WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM daily_tip WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
 def get_image_paths_for_user(conn, user_id: int) -> list:
-    rows = conn.execute("SELECT image_path FROM entries WHERE user_id = ?", (user_id,)).fetchall()
-    return [r["image_path"] for r in rows if r["image_path"]]
+    rows = conn.execute("SELECT image_path, image_path2 FROM entries WHERE user_id = ?", (user_id,)).fetchall()
+    paths = []
+    for r in rows:
+        if r["image_path"]:
+            paths.append(r["image_path"])
+        if r["image_path2"]:
+            paths.append(r["image_path2"])
+    return paths
 
 
 def delete_entries_for_date(conn, user_id: int, date_str: str) -> list:
     rows = conn.execute(
-        "SELECT image_path FROM entries WHERE user_id = ? AND substr(created_at, 1, 10) = ?",
+        "SELECT image_path, image_path2 FROM entries WHERE user_id = ? AND substr(created_at, 1, 10) = ?",
         (user_id, date_str),
     ).fetchall()
     conn.execute(
         "DELETE FROM entries WHERE user_id = ? AND substr(created_at, 1, 10) = ?",
         (user_id, date_str),
     )
-    return [r["image_path"] for r in rows if r["image_path"]]
+    delete_water_for_date(conn, user_id, date_str)
+    conn.execute("DELETE FROM daily_tip WHERE user_id = ? AND tip_date = ?", (user_id, date_str))
+    paths = []
+    for r in rows:
+        if r["image_path"]:
+            paths.append(r["image_path"])
+        if r["image_path2"]:
+            paths.append(r["image_path2"])
+    return paths
 
 
 # ---------- entries ----------
 
 def insert_entry(conn, *, user_id, created_at, meal_type, source, items_json,
                   total_calories, protein_g, carbs_g, fat_g, confidence,
-                  notes=None, image_path=None):
+                  notes=None, image_path=None, image_path2=None, energy_score=None):
     cur = conn.execute(
         """INSERT INTO entries
            (user_id, created_at, meal_type, source, items_json, total_calories,
-            protein_g, carbs_g, fat_g, confidence, notes, image_path)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            protein_g, carbs_g, fat_g, confidence, notes, image_path, image_path2, energy_score)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (user_id, created_at, meal_type, source, items_json, total_calories,
-         protein_g, carbs_g, fat_g, confidence, notes, image_path),
+         protein_g, carbs_g, fat_g, confidence, notes, image_path, image_path2, energy_score),
     )
     return get_entry(conn, user_id, cur.lastrowid)
 
@@ -238,14 +265,62 @@ def get_goals(conn, user_id: int):
     return dict(row) if row else None
 
 
-def set_goals(conn, user_id: int, *, calories, protein_g, carbs_g, fat_g):
+def set_goals(conn, user_id: int, *, calories, protein_g, carbs_g, fat_g, water_ml=None):
+    if water_ml is None:
+        existing = get_goals(conn, user_id)
+        water_ml = existing["water_ml"] if existing else 2000
     conn.execute(
-        """INSERT INTO goals (user_id, calories, protein_g, carbs_g, fat_g) VALUES (?, ?, ?, ?, ?)
+        """INSERT INTO goals (user_id, calories, protein_g, carbs_g, fat_g, water_ml) VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT(user_id) DO UPDATE SET calories = excluded.calories,
-               protein_g = excluded.protein_g, carbs_g = excluded.carbs_g, fat_g = excluded.fat_g""",
-        (user_id, calories, protein_g, carbs_g, fat_g),
+               protein_g = excluded.protein_g, carbs_g = excluded.carbs_g, fat_g = excluded.fat_g,
+               water_ml = excluded.water_ml""",
+        (user_id, calories, protein_g, carbs_g, fat_g, water_ml),
     )
     return get_goals(conn, user_id)
+
+
+# ---------- water ----------
+
+def add_water(conn, user_id: int, ml: int, logged_at: str) -> int:
+    conn.execute(
+        "INSERT INTO water_log (user_id, logged_at, ml) VALUES (?, ?, ?)",
+        (user_id, logged_at, ml),
+    )
+    return get_water_total_for_date(conn, user_id, logged_at[:10])
+
+
+def get_water_total_for_date(conn, user_id: int, date_str: str) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(SUM(ml), 0) AS total FROM water_log WHERE user_id = ? AND substr(logged_at, 1, 10) = ?",
+        (user_id, date_str),
+    ).fetchone()
+    return row["total"]
+
+
+def delete_water_for_date(conn, user_id: int, date_str: str) -> None:
+    conn.execute(
+        "DELETE FROM water_log WHERE user_id = ? AND substr(logged_at, 1, 10) = ?",
+        (user_id, date_str),
+    )
+
+
+# ---------- daily tip ----------
+
+def get_daily_tip(conn, user_id: int, date_str: str):
+    row = conn.execute(
+        "SELECT * FROM daily_tip WHERE user_id = ? AND tip_date = ?", (user_id, date_str)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def set_daily_tip(conn, user_id: int, date_str: str, tip_text: str, generated_at: str) -> dict:
+    conn.execute(
+        """INSERT INTO daily_tip (user_id, tip_date, tip_text, generated_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(user_id, tip_date) DO UPDATE SET tip_text = excluded.tip_text,
+                                                          generated_at = excluded.generated_at""",
+        (user_id, date_str, tip_text, generated_at),
+    )
+    return get_daily_tip(conn, user_id, date_str)
 
 
 # ---------- profile ----------

@@ -296,6 +296,70 @@ nav.tabbar button.active .tab-icon { transform: translateY(-1px) scale(1.08); }
 .manual-goals-details[open] summary::before { transform: rotate(90deg); }
 .manual-goals-details .field:first-of-type { margin-top: 14px; }
 
+/* Edit-entry modal: clearer section separation */
+.edit-section {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.edit-section:first-of-type { padding-top: 0; }
+.edit-section > label {
+  display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 8px; font-weight: 500;
+}
+.edit-advanced-details { border-bottom: none; padding-bottom: 6px; }
+.edit-advanced-details summary {
+  cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--text-dim); list-style: none;
+}
+.edit-advanced-details summary::-webkit-details-marker { display: none; }
+.edit-advanced-details summary::before { content: "›  "; display: inline-block; transition: transform 0.15s; }
+.edit-advanced-details[open] summary::before { transform: rotate(90deg); }
+.edit-advanced-details .field:first-of-type { margin-top: 14px; }
+.edit-item-row {
+  background: var(--surface-2); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px;
+}
+
+/* Wellness row (water + energy) */
+.wellness-row {
+  display: flex; gap: 10px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);
+}
+.wellness-item { flex: 1; text-align: center; }
+.wellness-label { font-size: 11.5px; color: var(--text-dim); font-weight: 600; margin-bottom: 6px; }
+.wellness-value { font-size: 13px; font-weight: 700; margin-top: 6px; }
+.wellness-actions { display: flex; gap: 6px; justify-content: center; margin-top: 2px; }
+.chip-btn {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 20px;
+  padding: 5px 10px; font-size: 11.5px; font-weight: 600; color: var(--text); cursor: pointer;
+}
+.chip-btn:active { background: var(--accent-soft); }
+.energy-dots { display: flex; justify-content: center; gap: 4px; }
+.energy-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--border); }
+.energy-dot.filled { background: var(--carbs); }
+
+/* Tip card */
+#tipCard .tip-text { font-size: 13.5px; line-height: 1.55; margin-bottom: 10px; }
+#tipCard .tip-meta { display: flex; justify-content: flex-end; }
+#tipCard .tip-meta button {
+  background: none; border: none; color: var(--text-dim); font-size: 12px; cursor: pointer; text-decoration: underline;
+}
+
+/* Photo review modal */
+.photo-preview-row { display: flex; gap: 10px; margin-bottom: 14px; }
+.photo-preview-thumb { position: relative; width: 100px; height: 100px; border-radius: var(--radius-sm); overflow: hidden; }
+.photo-preview-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-preview-thumb button {
+  position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); color: white; border: none; font-size: 12px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* What's New */
+.whats-new-version { margin-bottom: 16px; }
+.whats-new-version:last-child { margin-bottom: 0; }
+.whats-new-version ul { margin: 0; padding-left: 20px; }
+.whats-new-version li { font-size: 13px; line-height: 1.6; margin-bottom: 6px; }
+
+/* Entry energy badge */
+.badge.energy-badge { background: var(--surface); border: 1px solid var(--border); }
+
 /* Meal plan cards */
 .plan-day-summary { display: flex; gap: 8px; margin: 14px 0; }
 .plan-day-summary .target-cell { flex: 1; }

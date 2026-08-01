@@ -144,6 +144,29 @@ const TRANSLATIONS = {
       "Protein is set high (within the ISSN's recommended 1.6-2.2g/kg range) to preserve lean mass.",
     direction_up: "up",
     direction_down: "down",
+
+    water_title: "Water",
+    energy_title: "Energy today",
+    energy_no_data: "Log a photo meal to see this",
+    add_water_ml: "+{ml}ml",
+
+    photo_review_title: "Review Photo",
+    add_another_angle: "+ Add another angle",
+    analyze_btn: "Analyze",
+    remove_photo: "Remove",
+
+    tip_card_title: "Today's Tip",
+    get_tip_btn: "Get a Tip for Today",
+    refresh_tip_btn: "Refresh Tip",
+    generating_tip: "Thinking…",
+    could_not_get_tip: "Could not get a tip right now",
+
+    whats_new_title: "What's New",
+    whats_new_btn: "What's new",
+
+    edit_photo_meal: "Photo meal",
+    edit_manual_meal: "Manual entry",
+    daily_water_ml: "Daily Water (ml)",
   },
 
   bg: {
@@ -292,6 +315,29 @@ const TRANSLATIONS = {
       "1.6-2.2г/кг) за запазване на мускулната маса.",
     direction_up: "нагоре",
     direction_down: "надолу",
+
+    water_title: "Вода",
+    energy_title: "Енергия днес",
+    energy_no_data: "Добави снимка на хранене, за да видиш това",
+    add_water_ml: "+{ml}мл",
+
+    photo_review_title: "Преглед на снимката",
+    add_another_angle: "+ Добави друг ъгъл",
+    analyze_btn: "Анализирай",
+    remove_photo: "Премахни",
+
+    tip_card_title: "Съвет за деня",
+    get_tip_btn: "Вземи съвет за деня",
+    refresh_tip_btn: "Обнови съвета",
+    generating_tip: "Мисли…",
+    could_not_get_tip: "Съветът не можа да бъде получен в момента",
+
+    whats_new_title: "Какво ново",
+    whats_new_btn: "Какво ново",
+
+    edit_photo_meal: "Хранене от снимка",
+    edit_manual_meal: "Ръчен запис",
+    daily_water_ml: "Дневна вода (мл)",
   },
 };
 

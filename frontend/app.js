@@ -1,4 +1,4 @@
-const state = { entryBeingEdited: null, units: "metric", pendingPinUserId: null };
+const state = { entryBeingEdited: null, units: "metric", pendingPinUserId: null, pendingPhotos: [] };
 
 const $ = (id) => document.getElementById(id);
 
@@ -201,6 +201,7 @@ function showApp() {
   refreshLangBtn();
   loadToday();
   maybeShowWelcome();
+  maybeShowWhatsNew();
 }
 
 $("switchUserBtn").addEventListener("click", () => {
@@ -222,6 +223,34 @@ function maybeShowWelcome() {
 $("welcomeDismissBtn").addEventListener("click", () => {
   localStorage.setItem("welcomeSeen", "1");
   $("welcomeModal").classList.add("hidden");
+});
+
+// ---------- What's New ----------
+function maybeShowWhatsNew() {
+  const seenVersion = Number(localStorage.getItem("whatsNewSeenVersion") || 0);
+  if (!localStorage.getItem("welcomeSeen")) {
+    // brand new device — nothing to announce, they're starting on the latest version already
+    localStorage.setItem("whatsNewSeenVersion", CURRENT_APP_VERSION);
+    return;
+  }
+  if (seenVersion < CURRENT_APP_VERSION) openWhatsNew();
+}
+
+function renderWhatsNewContent() {
+  const lang = currentLang();
+  $("whatsNewContent").innerHTML = WHATS_NEW
+    .map((entry) => `<div class="whats-new-version"><ul>${entry[lang].map((line) => `<li>${line}</li>`).join("")}</ul></div>`)
+    .join("");
+}
+
+function openWhatsNew() {
+  renderWhatsNewContent();
+  $("whatsNewModal").classList.remove("hidden");
+}
+$("whatsNewBtn").addEventListener("click", openWhatsNew);
+$("whatsNewCloseBtn").addEventListener("click", () => {
+  localStorage.setItem("whatsNewSeenVersion", CURRENT_APP_VERSION);
+  $("whatsNewModal").classList.add("hidden");
 });
 
 // ---------- Settings modal ----------
@@ -307,6 +336,8 @@ async function loadToday() {
   const data = await res.json();
   renderTotals(data.totals, data.goals);
   renderEntries(data.entries);
+  renderWater(data.water_ml, data.goals.water_ml);
+  loadCachedTip();
 }
 
 function renderTotals(totals, goals) {
@@ -324,7 +355,64 @@ function renderTotals(totals, goals) {
   setMacro("protein", totals.protein_g, goals.protein_g);
   setMacro("carbs", totals.carbs_g, goals.carbs_g);
   setMacro("fat", totals.fat_g, goals.fat_g);
+  renderEnergy(totals.energy_avg);
 }
+
+function renderEnergy(avg) {
+  const dots = document.querySelectorAll("#energyDots .energy-dot");
+  const filled = avg == null ? 0 : Math.round(avg);
+  dots.forEach((dot, i) => dot.classList.toggle("filled", i < filled));
+  $("energyVal").textContent = avg == null ? t("energy_no_data") : `${avg}/5`;
+}
+
+// ---------- Water ----------
+function renderWater(ml, goalMl) {
+  $("waterVal").textContent = `${ml}/${goalMl}ml`;
+}
+
+async function addWater(ml) {
+  const res = await apiFetch("/api/water", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ml }),
+  });
+  if (!res.ok) return;
+  loadToday();
+}
+$("addWater250").addEventListener("click", () => addWater(250));
+$("addWater500").addEventListener("click", () => addWater(500));
+
+// ---------- Coach tip ----------
+function renderTip(tipText) {
+  $("tipContent").innerHTML = `
+    <div class="tip-text">${escapeHtml(tipText)}</div>
+    <div class="tip-meta"><button id="refreshTipBtn">${t("refresh_tip_btn")}</button></div>
+  `;
+  $("refreshTipBtn").addEventListener("click", generateTip);
+}
+
+async function loadCachedTip() {
+  const res = await apiFetch("/api/coach-tip");
+  if (!res.ok) return;
+  const data = await res.json();
+  if (data.tip) renderTip(data.tip);
+}
+
+async function generateTip() {
+  const container = $("tipContent");
+  container.innerHTML = `<div class="tip-text"><span class="spinner dark"></span> ${t("generating_tip")}</div>`;
+  try {
+    const res = await apiFetch(`/api/coach-tip?lang=${currentLang()}`, { method: "POST" });
+    if (!res.ok) throw new Error(t("could_not_get_tip"));
+    const data = await res.json();
+    renderTip(data.tip);
+  } catch (err) {
+    container.innerHTML = `<button class="btn btn-secondary" id="getTipBtn" style="width:100%">${t("get_tip_btn")}</button>`;
+    $("getTipBtn").addEventListener("click", generateTip);
+    toast(err.message);
+  }
+}
+$("getTipBtn").addEventListener("click", generateTip);
 
 function setMacro(name, value, goal) {
   $(`${name}Val`).textContent = `${value}/${goal}g`;
@@ -351,12 +439,13 @@ function renderEntries(entries) {
         : `<div class="thumb-placeholder">✏️</div>`;
       const itemNames = e.items.map((i) => i.name).join(", ");
       const lowConf = e.confidence === "low" ? `<span class="badge low-confidence">${t("low_confidence")}</span>` : "";
+      const energyBadge = e.energy_score != null ? `<span class="badge energy-badge">⚡${e.energy_score}/5</span>` : "";
       const time = e.created_at.slice(11, 16);
       return `
         <div class="entry" data-id="${e.id}">
           ${thumb}
           <div class="entry-body">
-            <div class="entry-title">${e.total_calories} kcal <span class="badge">${t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack")}</span> ${lowConf}</div>
+            <div class="entry-title">${e.total_calories} kcal <span class="badge">${t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack")}</span> ${energyBadge} ${lowConf}</div>
             <div class="entry-items">${escapeHtml(itemNames)} · ${time}</div>
             <div class="entry-macros">P ${e.protein_g}g · C ${e.carbs_g}g · F ${e.fat_g}g</div>
           </div>
@@ -454,18 +543,67 @@ $("editSaveBtn").addEventListener("click", async () => {
   loadToday();
 });
 
-// ---------- Photo capture ----------
+// ---------- Photo capture (with optional second angle before analyzing) ----------
 $("takePhotoBtn").addEventListener("click", () => $("photoInput").click());
-$("photoInput").addEventListener("change", async (e) => {
+
+$("photoInput").addEventListener("change", (e) => {
   const file = e.target.files[0];
+  e.target.value = "";
   if (!file) return;
-  const btn = $("takePhotoBtn");
+  state.pendingPhotos = [file];
+  openPhotoReview();
+});
+
+$("photoInput2").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  state.pendingPhotos.push(file);
+  renderPhotoPreview();
+});
+
+$("addAngleBtn").addEventListener("click", () => $("photoInput2").click());
+
+function renderPhotoPreview() {
+  $("photoPreviewRow").innerHTML = state.pendingPhotos
+    .map(
+      (file, i) => `
+      <div class="photo-preview-thumb">
+        <img src="${URL.createObjectURL(file)}" alt="">
+        <button data-idx="${i}" title="${t("remove_photo")}">✕</button>
+      </div>`
+    )
+    .join("");
+  $("photoPreviewRow").querySelectorAll("button").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      state.pendingPhotos.splice(Number(btn.dataset.idx), 1);
+      if (state.pendingPhotos.length === 0) closePhotoReview();
+      else renderPhotoPreview();
+    })
+  );
+  $("addAngleBtn").classList.toggle("hidden", state.pendingPhotos.length >= 2);
+}
+
+function openPhotoReview() {
+  renderPhotoPreview();
+  $("photoReviewModal").classList.remove("hidden");
+}
+function closePhotoReview() {
+  $("photoReviewModal").classList.add("hidden");
+  state.pendingPhotos = [];
+}
+$("photoCancelBtn").addEventListener("click", closePhotoReview);
+
+$("photoAnalyzeBtn").addEventListener("click", async () => {
+  if (!state.pendingPhotos.length) return;
+  const btn = $("photoAnalyzeBtn");
   const originalHtml = btn.innerHTML;
   btn.innerHTML = `<span class="spinner"></span> ${t("analyzing")}`;
   btn.disabled = true;
 
   const formData = new FormData();
-  formData.append("image", file);
+  formData.append("image", state.pendingPhotos[0]);
+  if (state.pendingPhotos[1]) formData.append("image2", state.pendingPhotos[1]);
   formData.append("meal_type", $("mealTypeSelect").value);
   formData.append("lang", currentLang());
 
@@ -477,13 +615,13 @@ $("photoInput").addEventListener("change", async (e) => {
     }
     const entry = await res.json();
     toast(t("logged_kcal", { kcal: entry.total_calories, confidence: entry.confidence }));
+    closePhotoReview();
     loadToday();
   } catch (err) {
     toast(err.message || t("something_wrong"));
   } finally {
     btn.innerHTML = originalHtml;
     btn.disabled = false;
-    e.target.value = "";
   }
 });
 
@@ -721,6 +859,7 @@ async function loadGoalsForm() {
   $("goalProtein").value = g.protein_g;
   $("goalCarbs").value = g.carbs_g;
   $("goalFat").value = g.fat_g;
+  $("goalWater").value = g.water_ml;
 }
 $("saveGoalsBtn").addEventListener("click", async () => {
   await apiFetch("/api/goals", {
@@ -731,6 +870,7 @@ $("saveGoalsBtn").addEventListener("click", async () => {
       protein_g: Number($("goalProtein").value),
       carbs_g: Number($("goalCarbs").value),
       fat_g: Number($("goalFat").value),
+      water_ml: Number($("goalWater").value),
     }),
   });
   toast(t("goals_saved"));

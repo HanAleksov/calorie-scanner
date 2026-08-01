@@ -1,8 +1,10 @@
 import json
 import os
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
+
+import tzutil
 
 from dotenv import load_dotenv
 
@@ -12,6 +14,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+import coach
 import db
 import meal_plan as meal_plan_module
 import nutrition
@@ -54,11 +57,13 @@ def _entry_to_public(entry: dict) -> dict:
 
 
 def _totals(entries: list[dict]) -> dict:
+    scored = [e["energy_score"] for e in entries if e.get("energy_score") is not None]
     return {
         "calories": sum(e["total_calories"] or 0 for e in entries),
         "protein_g": round(sum(e["protein_g"] or 0 for e in entries), 1),
         "carbs_g": round(sum(e["carbs_g"] or 0 for e in entries), 1),
         "fat_g": round(sum(e["fat_g"] or 0 for e in entries), 1),
+        "energy_avg": round(sum(scored) / len(scored), 1) if scored else None,
     }
 
 
@@ -145,7 +150,7 @@ def delete_current_user(user_id: int = Depends(current_user_id)):
 
 @app.delete("/api/today")
 def reset_today(user_id: int = Depends(current_user_id)):
-    today_str = date.today().isoformat()
+    today_str = tzutil.today_local().isoformat()
     with db.get_conn() as conn:
         image_paths = db.delete_entries_for_date(conn, user_id, today_str)
     for path in image_paths:
@@ -158,6 +163,7 @@ def reset_today(user_id: int = Depends(current_user_id)):
 @app.post("/api/log-meal")
 async def log_meal(
     image: UploadFile = File(...),
+    image2: UploadFile | None = File(None),
     meal_type: str = Form("snack"),
     lang: str = Form("en"),
     user_id: int = Depends(current_user_id),
@@ -168,13 +174,23 @@ async def log_meal(
         lang = "en"
     if image.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(400, "image must be JPEG, PNG, or WebP")
+    if image2 is not None and image2.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(400, "second image must be JPEG, PNG, or WebP")
 
     image_bytes = await image.read()
     if len(image_bytes) > 10 * 1024 * 1024:
         raise HTTPException(400, "image too large (max 10MB)")
+    images = [(image_bytes, image.content_type)]
+
+    image2_bytes = None
+    if image2 is not None:
+        image2_bytes = await image2.read()
+        if len(image2_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(400, "second image too large (max 10MB)")
+        images.append((image2_bytes, image2.content_type))
 
     try:
-        result = vision.analyze_meal_photo(image_bytes, image.content_type, lang=lang)
+        result = vision.analyze_meal_photo(images, lang=lang)
     except RuntimeError as e:
         raise HTTPException(502, str(e))
 
@@ -182,11 +198,17 @@ async def log_meal(
     filename = f"{uuid.uuid4().hex}{ext}"
     (UPLOADS_DIR / filename).write_bytes(image_bytes)
 
+    filename2 = None
+    if image2_bytes is not None:
+        ext2 = ALLOWED_IMAGE_TYPES[image2.content_type]
+        filename2 = f"{uuid.uuid4().hex}{ext2}"
+        (UPLOADS_DIR / filename2).write_bytes(image2_bytes)
+
     with db.get_conn() as conn:
         entry = db.insert_entry(
             conn,
             user_id=user_id,
-            created_at=datetime.now().isoformat(timespec="seconds"),
+            created_at=tzutil.now_local_naive().isoformat(timespec="seconds"),
             meal_type=meal_type,
             source="photo",
             items_json=json.dumps(result["items"]),
@@ -196,6 +218,8 @@ async def log_meal(
             fat_g=result["fat_g"],
             confidence=result["confidence"],
             image_path=filename,
+            image_path2=filename2,
+            energy_score=result.get("energy_score"),
         )
     return _entry_to_public(entry)
 
@@ -217,7 +241,7 @@ async def log_manual(
         entry = db.insert_entry(
             conn,
             user_id=user_id,
-            created_at=datetime.now().isoformat(timespec="seconds"),
+            created_at=tzutil.now_local_naive().isoformat(timespec="seconds"),
             meal_type=meal_type,
             source="manual",
             items_json=json.dumps([{"name": description, "est_grams": None}]),
@@ -232,17 +256,34 @@ async def log_manual(
 
 @app.get("/api/today")
 def today(user_id: int = Depends(current_user_id)):
-    today_str = date.today().isoformat()
+    today_str = tzutil.today_local().isoformat()
     with db.get_conn() as conn:
         entries = db.get_entries_for_date(conn, user_id, today_str)
         goals = db.get_goals(conn, user_id)
+        water_ml = db.get_water_total_for_date(conn, user_id, today_str)
     entries = [_entry_to_public(e) for e in entries]
-    return {"date": today_str, "entries": entries, "totals": _totals(entries), "goals": goals}
+    return {
+        "date": today_str,
+        "entries": entries,
+        "totals": _totals(entries),
+        "goals": goals,
+        "water_ml": water_ml,
+    }
+
+
+@app.post("/api/water")
+def log_water(payload: dict, user_id: int = Depends(current_user_id)):
+    ml = payload.get("ml")
+    if not isinstance(ml, (int, float)) or ml <= 0:
+        raise HTTPException(400, "ml must be a positive number")
+    with db.get_conn() as conn:
+        total = db.add_water(conn, user_id, int(ml), tzutil.now_local_naive().isoformat(timespec="seconds"))
+    return {"water_ml": total}
 
 
 @app.get("/api/history")
 def history(days: int = 14, user_id: int = Depends(current_user_id)):
-    end = date.today()
+    end = tzutil.today_local()
     start = end - timedelta(days=days - 1)
     with db.get_conn() as conn:
         entries = db.get_entries_between(conn, user_id, start.isoformat(), end.isoformat())
@@ -401,6 +442,7 @@ def set_goals(payload: dict, user_id: int = Depends(current_user_id)):
             protein_g=payload["protein_g"],
             carbs_g=payload["carbs_g"],
             fat_g=payload["fat_g"],
+            water_ml=payload.get("water_ml"),
         )
 
 
@@ -459,9 +501,9 @@ def create_meal_plan(lang: str = "en", user_id: int = Depends(current_user_id)):
         db.set_meal_plan(
             conn, user_id,
             plan_json=json.dumps(plan),
-            generated_at=datetime.now().isoformat(timespec="seconds"),
+            generated_at=tzutil.now_local_naive().isoformat(timespec="seconds"),
         )
-    return {"generated_at": datetime.now().isoformat(timespec="seconds"), **plan}
+    return {"generated_at": tzutil.now_local_naive().isoformat(timespec="seconds"), **plan}
 
 
 @app.get("/api/meal-plan")
@@ -471,6 +513,54 @@ def get_meal_plan(user_id: int = Depends(current_user_id)):
     if not row or not row.get("plan_json"):
         return {"plan": None}
     return {"generated_at": row["generated_at"], **json.loads(row["plan_json"])}
+
+
+@app.get("/api/coach-tip")
+def get_coach_tip(user_id: int = Depends(current_user_id)):
+    today_str = tzutil.today_local().isoformat()
+    with db.get_conn() as conn:
+        tip = db.get_daily_tip(conn, user_id, today_str)
+    if not tip:
+        return {"tip": None}
+    return {"tip": tip["tip_text"], "generated_at": tip["generated_at"]}
+
+
+@app.post("/api/coach-tip")
+def create_coach_tip(lang: str = "en", user_id: int = Depends(current_user_id)):
+    if lang not in ALLOWED_LANGS:
+        lang = "en"
+    today_str = tzutil.today_local().isoformat()
+    with db.get_conn() as conn:
+        entries = db.get_entries_for_date(conn, user_id, today_str)
+        goals = db.get_goals(conn, user_id)
+        profile = db.get_profile(conn, user_id)
+
+    totals = _totals(entries)
+    meals_summary = "; ".join(
+        f"{e['meal_type']} at {e['created_at'][11:16]}: "
+        + ", ".join(i["name"] for i in json.loads(e["items_json"]))
+        for e in entries
+    )
+    context = {
+        "local_time": tzutil.now_local().strftime("%H:%M"),
+        "calories_eaten": totals["calories"], "calories_goal": goals["calories"],
+        "protein_eaten": totals["protein_g"], "protein_goal": goals["protein_g"],
+        "carbs_eaten": totals["carbs_g"], "carbs_goal": goals["carbs_g"],
+        "fat_eaten": totals["fat_g"], "fat_goal": goals["fat_g"],
+        "meals_summary": meals_summary,
+        "goal_type": profile.get("goal_type") if profile else None,
+    }
+    try:
+        tip_text = coach.generate_tip(context, lang=lang)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+    with db.get_conn() as conn:
+        tip = db.set_daily_tip(
+            conn, user_id, today_str, tip_text,
+            tzutil.now_local_naive().isoformat(timespec="seconds"),
+        )
+    return {"tip": tip["tip_text"], "generated_at": tip["generated_at"]}
 
 
 @app.get("/uploads/{filename}")

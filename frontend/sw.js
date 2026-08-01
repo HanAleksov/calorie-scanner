@@ -1,5 +1,5 @@
-const CACHE_NAME = "calorie-scanner-v7";
-const APP_SHELL = ["/", "/style.css", "/app.js", "/i18n.js"];
+const CACHE_NAME = "calorie-scanner-v8";
+const APP_SHELL = ["/", "/style.css", "/app.js", "/i18n.js", "/whatsnew.js"];
 const CACHE_FIRST_ASSETS = [
   "/manifest.json",
   "/icons/icon-192.png",

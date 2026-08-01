@@ -50,6 +50,7 @@
 <header>
   <h1><span class="logo-mark">🍽</span> <span data-i18n="app_name">Calorie Scanner</span></h1>
   <div class="actions">
+    <button class="icon-btn" id="whatsNewBtn" title="What's new">🎉</button>
     <button class="icon-btn" id="settingsBtn" title="Settings">⚙️</button>
     <button class="icon-btn" id="switchUserBtn" title="Switch user">👤</button>
     <button class="icon-btn" id="langBtn">EN</button>
@@ -98,6 +99,33 @@
           <div class="bar"><div class="fill" id="fatFill" style="width:0%"></div></div>
         </div>
       </div>
+
+      <div class="wellness-row">
+        <div class="wellness-item">
+          <div class="wellness-label">💧 <span data-i18n="water_title">Water</span></div>
+          <div class="wellness-value" id="waterVal">0/2000ml</div>
+          <div class="wellness-actions">
+            <button class="chip-btn" id="addWater250">+250ml</button>
+            <button class="chip-btn" id="addWater500">+500ml</button>
+          </div>
+        </div>
+        <div class="wellness-item">
+          <div class="wellness-label">⚡ <span data-i18n="energy_title">Energy today</span></div>
+          <div class="energy-dots" id="energyDots">
+            <span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span>
+          </div>
+          <div class="wellness-value" id="energyVal">–</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="tipCard">
+      <div class="section-title-row">
+        <h2 class="section-title" data-i18n="tip_card_title">Today's Tip</h2>
+      </div>
+      <div id="tipContent">
+        <button class="btn btn-secondary" id="getTipBtn" style="width:100%" data-i18n="get_tip_btn">Get a Tip for Today</button>
+      </div>
     </div>
 
     <div class="card">
@@ -112,6 +140,7 @@
         <button class="btn btn-secondary" id="manualEntryBtn"><span class="btn-icon">✏️</span> <span data-i18n="manual">Manual</span></button>
       </div>
       <input type="file" id="photoInput" accept="image/*" capture="environment">
+      <input type="file" id="photoInput2" accept="image/*" capture="environment">
     </div>
 
     <div class="card" id="entriesCard">
@@ -218,6 +247,7 @@
       <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="goalProtein"></div>
       <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="goalCarbs"></div>
       <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="goalFat"></div>
+      <div class="field"><label data-i18n="daily_water_ml">Daily Water (ml)</label><input type="number" id="goalWater"></div>
       <button class="btn btn-secondary" id="saveGoalsBtn" style="width:100%" data-i18n="save_manual_goals">Save Manual Goals</button>
     </details>
   </section>
@@ -236,6 +266,28 @@
     <h2 data-i18n="welcome_title">Welcome 👋</h2>
     <p class="explain-text" id="welcomeBody" style="font-size:13.5px;line-height:1.6"></p>
     <button class="btn btn-primary" id="welcomeDismissBtn" style="width:100%" data-i18n="welcome_dismiss">Got it, let's go</button>
+  </div>
+</div>
+
+<!-- Photo review modal (optional second angle before analyzing) -->
+<div class="modal-backdrop hidden" id="photoReviewModal">
+  <div class="modal-sheet">
+    <h2 data-i18n="photo_review_title">Review Photo</h2>
+    <div class="photo-preview-row" id="photoPreviewRow"></div>
+    <button class="btn btn-secondary" id="addAngleBtn" style="width:100%" data-i18n="add_another_angle">+ Add another angle</button>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="photoCancelBtn" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="photoAnalyzeBtn" data-i18n="analyze_btn">Analyze</button>
+    </div>
+  </div>
+</div>
+
+<!-- What's New modal -->
+<div class="modal-backdrop hidden" id="whatsNewModal">
+  <div class="modal-sheet">
+    <h2 data-i18n="whats_new_title">What's New</h2>
+    <div id="whatsNewContent"></div>
+    <button class="btn btn-primary" id="whatsNewCloseBtn" style="width:100%;margin-top:10px" data-i18n="close">Close</button>
   </div>
 </div>
 
@@ -259,21 +311,24 @@
 <div class="modal-backdrop hidden" id="editModal">
   <div class="modal-sheet">
     <h2 data-i18n="edit_entry_title">Edit Entry</h2>
-    <div class="field"><label data-i18n="meal_type">Meal type</label>
-      <select class="meal-type-select" id="editMealType">
-        <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
-        <option value="lunch" data-i18n="meal_lunch">Lunch</option>
-        <option value="dinner" data-i18n="meal_dinner">Dinner</option>
-        <option value="snack" data-i18n="meal_snack">Snack</option>
-      </select>
+
+    <div class="edit-section">
+      <div class="field" style="margin-bottom:0"><label data-i18n="meal_type">Meal type</label>
+        <select class="meal-type-select" id="editMealType">
+          <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
+          <option value="lunch" data-i18n="meal_lunch">Lunch</option>
+          <option value="dinner" data-i18n="meal_dinner">Dinner</option>
+          <option value="snack" data-i18n="meal_snack">Snack</option>
+        </select>
+      </div>
     </div>
 
-    <div id="editItemsSection" class="hidden">
+    <div id="editItemsSection" class="edit-section hidden">
       <label data-i18n="adjust_portions">Adjust portions (grams)</label>
       <div id="editItemsList" class="edit-items-list"></div>
     </div>
 
-    <details class="manual-goals-details" id="editAdvancedDetails">
+    <details class="edit-section edit-advanced-details" id="editAdvancedDetails">
       <summary data-i18n="edit_numbers_manually">Edit numbers manually</summary>
       <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="editCals"></div>
       <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="editProtein"></div>
@@ -318,6 +373,7 @@
 </div>
 
 <script src="/i18n.js"></script>
+<script src="/whatsnew.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
