@@ -1,10 +1,18 @@
 import base64
 import json
 import os
+from io import BytesIO
 
 import anthropic
+from PIL import Image
 
 MODEL = "claude-opus-5"
+
+# Anthropic's own guidance: vision quality plateaus above ~1.15 megapixels — beyond that,
+# extra resolution costs tokens without helping accuracy. Phone photos are typically 8-12MP,
+# so this is a large, quality-neutral token/bandwidth cut. Never upscales.
+MAX_IMAGE_PIXELS = 1_150_000
+IMAGE_JPEG_QUALITY = 87
 
 SYSTEM_PROMPT = """You are a nutrition estimation assistant for a personal calorie-tracking app.
 Given one or two photos of the same meal (a second photo, if present, is a different angle of the
@@ -98,6 +106,27 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
+def _optimize_image(image_bytes: bytes, media_type: str) -> tuple[bytes, str]:
+    """Downscale to MAX_IMAGE_PIXELS before sending to the API, if the source exceeds it.
+    Leaves already-small images untouched (no redundant re-compression). Only affects the
+    copy sent to Claude — the original upload on disk is never touched. Falls back to the
+    original bytes on any processing error, so a resize hiccup never blocks an analysis."""
+    try:
+        img = Image.open(BytesIO(image_bytes))
+        width, height = img.size
+        if width * height <= MAX_IMAGE_PIXELS:
+            return image_bytes, media_type
+        scale = (MAX_IMAGE_PIXELS / (width * height)) ** 0.5
+        img = img.convert("RGB").resize(
+            (max(1, round(width * scale)), max(1, round(height * scale))), Image.LANCZOS
+        )
+        buf = BytesIO()
+        img.save(buf, format="JPEG", quality=IMAGE_JPEG_QUALITY)
+        return buf.getvalue(), "image/jpeg"
+    except Exception:
+        return image_bytes, media_type
+
+
 LANGUAGE_NAMES = {"en": "English", "bg": "Bulgarian"}
 
 
@@ -108,7 +137,6 @@ def analyze_meal_photo(images: list[tuple[bytes, str]], lang: str = "en", user_n
     hint, not ground truth — still estimate from what's visible."""
     client = _client()
     lang_name = LANGUAGE_NAMES.get(lang, "English")
-    system = SYSTEM_PROMPT + f"\n\nWrite every text value (food item names) in {lang_name}."
 
     image_blocks = [
         {
@@ -119,7 +147,7 @@ def analyze_meal_photo(images: list[tuple[bytes, str]], lang: str = "en", user_n
                 "data": base64.standard_b64encode(image_bytes).decode("utf-8"),
             },
         }
-        for image_bytes, media_type in images
+        for image_bytes, media_type in (_optimize_image(b, mt) for b, mt in images)
     ]
     prompt_text = (
         "Analyze this meal photo and estimate calories, macros, and energy quality."
@@ -136,7 +164,12 @@ def analyze_meal_photo(images: list[tuple[bytes, str]], lang: str = "en", user_n
     response = client.messages.create(
         model=MODEL,
         max_tokens=3072,
-        system=system,
+        system=[
+            # Cached separately from the language line so the large static prompt is reused
+            # across both languages and every call, not fragmented into per-language entries.
+            {"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
+            {"type": "text", "text": f"Write every text value (food item names) in {lang_name}."},
+        ],
         output_config={"format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
         messages=[
             {
