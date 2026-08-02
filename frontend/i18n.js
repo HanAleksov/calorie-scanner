@@ -157,6 +157,24 @@ const TRANSLATIONS = {
     photo_desc_label: "Anything the AI should know? (optional)",
     photo_desc_placeholder: "e.g. no sugar, half portion, homemade",
 
+    weight_trend_title: "Weight Trend",
+    log_weight_btn: "Log",
+    no_weight_data: "Log your weight to start tracking your trend.",
+    weight_logged_toast: "Weight logged",
+    enter_weight_first: "Enter your weight first",
+
+    favorites_title: "Favorites",
+    quick_add_btn: "Quick Add",
+    save_favorite: "Save as favorite",
+    favorite_saved_toast: "Saved to favorites",
+    no_favorites_line1: "No favorites yet.",
+    no_favorites_line2: "Tap the ☆ on any meal to save it here.",
+    logged_from_favorite_toast: "Logged!",
+    delete_favorite_confirm: "Remove this favorite?",
+
+    log_this_meal_btn: "Log this",
+    logged_from_plan_toast: "Logged from your plan!",
+
     tip_card_title: "Today's Tip",
     get_tip_btn: "Get a Tip for Today",
     refresh_tip_btn: "Refresh Tip",
@@ -329,6 +347,24 @@ const TRANSLATIONS = {
     remove_photo: "Премахни",
     photo_desc_label: "Нещо, което AI трябва да знае? (по избор)",
     photo_desc_placeholder: "напр. без захар, половин порция, домашно",
+
+    weight_trend_title: "Тегло във времето",
+    log_weight_btn: "Запиши",
+    no_weight_data: "Запиши теглото си, за да проследяваш тенденцията.",
+    weight_logged_toast: "Теглото е записано",
+    enter_weight_first: "Първо въведи тегло",
+
+    favorites_title: "Любими",
+    quick_add_btn: "Бързо добавяне",
+    save_favorite: "Запази като любимо",
+    favorite_saved_toast: "Запазено в любими",
+    no_favorites_line1: "Все още няма любими.",
+    no_favorites_line2: "Докосни ☆ на кое да е хранене, за да го запазиш тук.",
+    logged_from_favorite_toast: "Записано!",
+    delete_favorite_confirm: "Да премахна ли това любимо?",
+
+    log_this_meal_btn: "Запиши",
+    logged_from_plan_toast: "Записано от плана ти!",
 
     tip_card_title: "Съвет за деня",
     get_tip_btn: "Вземи съвет за деня",

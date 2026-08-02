@@ -56,15 +56,14 @@ applyStaticTranslations();
 refreshLangBtn();
 
 // ---------- Tabs ----------
+function switchTab(name) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
+  if (name === "history") loadHistory();
+  if (name === "plan") loadPlanTab();
+}
 document.querySelectorAll(".tab-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-    btn.classList.add("active");
-    $(`tab-${btn.dataset.tab}`).classList.add("active");
-    if (btn.dataset.tab === "history") loadHistory();
-    if (btn.dataset.tab === "plan") loadPlanTab();
-  });
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
 // ---------- iOS install hint ----------
@@ -453,6 +452,7 @@ function renderEntries(entries) {
             ${noteLine}
           </div>
           <div class="entry-actions">
+            <button class="favorite-btn" title="${t("save_favorite")}">☆</button>
             <button class="edit-btn" title="${t("edit")}">✎</button>
             <button class="delete-btn" title="${t("delete")}">🗑</button>
           </div>
@@ -460,6 +460,9 @@ function renderEntries(entries) {
     })
     .join("");
 
+  list.querySelectorAll(".favorite-btn").forEach((btn) =>
+    btn.addEventListener("click", (ev) => saveAsFavorite(ev.target.closest(".entry").dataset.id))
+  );
   list.querySelectorAll(".edit-btn").forEach((btn) =>
     btn.addEventListener("click", (ev) => openEdit(ev.target.closest(".entry").dataset.id))
   );
@@ -473,6 +476,82 @@ async function deleteEntry(id) {
   await apiFetch(`/api/entries/${id}`, { method: "DELETE" });
   loadToday();
 }
+
+// ---------- Favorites ----------
+async function saveAsFavorite(entryId) {
+  const res = await apiFetch("/api/favorites", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entry_id: Number(entryId) }),
+  });
+  if (!res.ok) {
+    toast(t("something_wrong"));
+    return;
+  }
+  toast(t("favorite_saved_toast"));
+}
+
+async function renderFavorites() {
+  const res = await apiFetch("/api/favorites");
+  const { favorites } = await res.json();
+  const list = $("favoritesList");
+
+  if (!favorites.length) {
+    list.innerHTML = `<div class="empty-state">${t("no_favorites_line1")}<br>${t("no_favorites_line2")}</div>`;
+    return;
+  }
+
+  list.innerHTML = favorites
+    .map(
+      (f) => `
+      <div class="entry" data-id="${f.id}">
+        <div class="thumb-placeholder">⭐</div>
+        <div class="entry-body">
+          <div class="entry-title">${f.total_calories} kcal <span class="badge">${t(MEAL_LABEL_KEY[f.meal_type] || "meal_snack")}</span></div>
+          <div class="entry-items">${escapeHtml(f.name)}</div>
+          <div class="entry-macros">P ${f.protein_g}g · C ${f.carbs_g}g · F ${f.fat_g}g</div>
+        </div>
+        <div class="entry-actions">
+          <button class="log-favorite-btn btn btn-primary" style="padding:8px 12px;font-size:12px">${t("log_this_meal_btn")}</button>
+          <button class="delete-favorite-btn" title="${t("delete")}">🗑</button>
+        </div>
+      </div>`
+    )
+    .join("");
+
+  list.querySelectorAll(".log-favorite-btn").forEach((btn) =>
+    btn.addEventListener("click", (ev) => logFavorite(ev.target.closest(".entry").dataset.id))
+  );
+  list.querySelectorAll(".delete-favorite-btn").forEach((btn) =>
+    btn.addEventListener("click", async (ev) => {
+      if (!confirm(t("delete_favorite_confirm"))) return;
+      const id = ev.target.closest(".entry").dataset.id;
+      await apiFetch(`/api/favorites/${id}`, { method: "DELETE" });
+      renderFavorites();
+    })
+  );
+}
+
+async function logFavorite(favoriteId) {
+  const res = await apiFetch(`/api/favorites/${favoriteId}/log`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ meal_type: $("mealTypeSelect").value }),
+  });
+  if (!res.ok) {
+    toast(t("something_wrong"));
+    return;
+  }
+  toast(t("logged_from_favorite_toast"));
+  $("favoritesModal").classList.add("hidden");
+  loadToday();
+}
+
+$("quickAddBtn").addEventListener("click", () => {
+  $("favoritesModal").classList.remove("hidden");
+  renderFavorites();
+});
+$("favoritesCloseBtn").addEventListener("click", () => $("favoritesModal").classList.add("hidden"));
 
 async function openEdit(id) {
   const res = await apiFetch(`/api/entries/${id}`);
@@ -675,7 +754,81 @@ async function loadHistory() {
         </div>`;
     })
     .join("");
+  loadWeightLog();
 }
+
+// ---------- Weight trend ----------
+async function loadWeightLog() {
+  const [weightRes, profileRes] = await Promise.all([
+    apiFetch("/api/weight?limit=30"),
+    apiFetch("/api/profile"),
+  ]);
+  const { entries } = await weightRes.json();
+  const profile = await profileRes.json();
+  const goalType = profile && profile.goal_type;
+  const list = $("weightLogList");
+
+  if ($("weightLogInput") && entries.length && !$("weightLogInput").value) {
+    $("weightLogInput").value = entries[0].weight_kg;
+  }
+
+  if (!entries.length) {
+    list.innerHTML = `<div class="empty-state">${t("no_weight_data")}</div>`;
+    return;
+  }
+
+  const locale = currentLang() === "bg" ? "bg-BG" : undefined;
+  list.innerHTML = entries
+    .map((entry, i) => {
+      const prev = entries[i + 1];
+      let deltaHtml = "";
+      if (prev) {
+        const diff = Math.round((entry.weight_kg - prev.weight_kg) * 10) / 10;
+        const sign = diff > 0 ? "+" : "";
+        const wantsDown = goalType === "lose";
+        const wantsUp = goalType === "gain";
+        const isGood = (wantsDown && diff < 0) || (wantsUp && diff > 0);
+        const cls = diff === 0 ? "neutral" : isGood ? "good" : "neutral";
+        deltaHtml = `<span class="delta ${cls}">${sign}${diff}kg</span>`;
+      }
+      const label = new Date(entry.logged_at.replace(" ", "T")).toLocaleDateString(locale, { month: "short", day: "numeric" });
+      return `
+        <div class="weight-row" data-id="${entry.id}">
+          <div class="date">${label}</div>
+          <div class="kg">${entry.weight_kg}kg</div>
+          ${deltaHtml}
+          <button class="delete-weight-btn" title="${t("delete")}">🗑</button>
+        </div>`;
+    })
+    .join("");
+
+  list.querySelectorAll(".delete-weight-btn").forEach((btn) =>
+    btn.addEventListener("click", async (ev) => {
+      const id = ev.target.closest(".weight-row").dataset.id;
+      await apiFetch(`/api/weight/${id}`, { method: "DELETE" });
+      loadWeightLog();
+    })
+  );
+}
+
+$("logWeightBtn").addEventListener("click", async () => {
+  const weightKg = Number($("weightLogInput").value);
+  if (!weightKg || weightKg <= 0) {
+    toast(t("enter_weight_first"));
+    return;
+  }
+  const res = await apiFetch("/api/weight", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ weight_kg: weightKg }),
+  });
+  if (!res.ok) {
+    toast(t("something_wrong"));
+    return;
+  }
+  toast(t("weight_logged_toast"));
+  loadWeightLog();
+});
 
 // ================== PLAN TAB ==================
 document.querySelectorAll(".unit-btn").forEach((btn) => {
@@ -794,10 +947,11 @@ $("applyGoalsBtn").addEventListener("click", async () => {
 
 // ---------- AI meal plan ----------
 function renderMealPlan(plan) {
+  state.lastPlan = plan;
   const mealIcons = { breakfast: "🌅", lunch: "☀️", dinner: "🌙", snack: "🍎" };
   const mealsHtml = plan.meals
     .map(
-      (m) => `
+      (m, i) => `
       <div class="meal-card">
         <div class="meal-header">
           <span class="meal-name">${mealIcons[m.meal_type] || "🍽"} ${escapeHtml(m.name)}</span>
@@ -806,6 +960,7 @@ function renderMealPlan(plan) {
         <div class="meal-desc">${escapeHtml(m.description)}</div>
         <div class="meal-rationale">${escapeHtml(m.rationale)}</div>
         <div class="meal-macros">P ${m.protein_g}g · C ${m.carbs_g}g · F ${m.fat_g}g</div>
+        <button class="btn btn-secondary log-plan-meal-btn" data-idx="${i}" style="width:100%;margin-top:8px">${t("log_this_meal_btn")}</button>
       </div>`
     )
     .join("");
@@ -826,6 +981,30 @@ function renderMealPlan(plan) {
     <div class="plan-notes">${escapeHtml(plan.notes)}</div>
     ${generatedLabel ? `<div class="plan-meta">${generatedLabel}</div>` : ""}
   `;
+
+  $("mealPlanResult").querySelectorAll(".log-plan-meal-btn").forEach((btn) =>
+    btn.addEventListener("click", () => logPlanMeal(Number(btn.dataset.idx)))
+  );
+}
+
+async function logPlanMeal(idx) {
+  const meal = state.lastPlan.meals[idx];
+  const formData = new FormData();
+  formData.append("meal_type", meal.meal_type);
+  formData.append("description", meal.name);
+  formData.append("total_calories", meal.calories);
+  formData.append("protein_g", meal.protein_g);
+  formData.append("carbs_g", meal.carbs_g);
+  formData.append("fat_g", meal.fat_g);
+
+  const res = await apiFetch("/api/log-manual", { method: "POST", body: formData });
+  if (!res.ok) {
+    toast(t("something_wrong"));
+    return;
+  }
+  toast(t("logged_from_plan_toast"));
+  switchTab("today");
+  loadToday();
 }
 
 async function loadSavedMealPlan() {

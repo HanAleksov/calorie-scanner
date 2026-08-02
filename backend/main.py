@@ -284,6 +284,31 @@ def log_water(payload: dict, user_id: int = Depends(current_user_id)):
     return {"water_ml": total}
 
 
+# ---------- weight ----------
+
+@app.post("/api/weight")
+def log_weight(payload: dict, user_id: int = Depends(current_user_id)):
+    weight_kg = payload.get("weight_kg")
+    if not isinstance(weight_kg, (int, float)) or weight_kg <= 0:
+        raise HTTPException(400, "weight_kg must be a positive number")
+    with db.get_conn() as conn:
+        entry = db.add_weight_entry(conn, user_id, weight_kg, tzutil.now_local_naive().isoformat(timespec="seconds"))
+    return entry
+
+
+@app.get("/api/weight")
+def get_weight_log(limit: int = 30, user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        return {"entries": db.get_weight_log(conn, user_id, limit)}
+
+
+@app.delete("/api/weight/{entry_id}")
+def delete_weight_entry(entry_id: int, user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        db.delete_weight_entry(conn, user_id, entry_id)
+    return {"ok": True}
+
+
 @app.get("/api/history")
 def history(days: int = 14, user_id: int = Depends(current_user_id)):
     end = tzutil.today_local()
@@ -323,6 +348,73 @@ def update_entry(entry_id: int, payload: dict, user_id: int = Depends(current_us
         if not db.get_entry(conn, user_id, entry_id):
             raise HTTPException(404, "entry not found")
         entry = db.update_entry(conn, user_id, entry_id, fields)
+    return _entry_to_public(entry)
+
+
+@app.post("/api/favorites")
+def create_favorite(payload: dict, user_id: int = Depends(current_user_id)):
+    entry_id = payload.get("entry_id")
+    name = (payload.get("name") or "").strip()
+    if not entry_id:
+        raise HTTPException(400, "entry_id is required")
+    with db.get_conn() as conn:
+        entry = db.get_entry(conn, user_id, entry_id)
+        if not entry:
+            raise HTTPException(404, "entry not found")
+        if not name:
+            items = json.loads(entry["items_json"])
+            name = ", ".join(i["name"] for i in items) or "Favorite"
+        favorite = db.add_favorite(
+            conn, user_id,
+            name=name[:200],
+            meal_type=entry["meal_type"],
+            items_json=entry["items_json"],
+            total_calories=entry["total_calories"],
+            protein_g=entry["protein_g"],
+            carbs_g=entry["carbs_g"],
+            fat_g=entry["fat_g"],
+            energy_score=entry["energy_score"],
+            created_at=tzutil.now_local_naive().isoformat(timespec="seconds"),
+        )
+    return favorite
+
+
+@app.get("/api/favorites")
+def get_favorites(user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        return {"favorites": db.list_favorites(conn, user_id)}
+
+
+@app.delete("/api/favorites/{favorite_id}")
+def remove_favorite(favorite_id: int, user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        db.delete_favorite(conn, user_id, favorite_id)
+    return {"ok": True}
+
+
+@app.post("/api/favorites/{favorite_id}/log")
+def log_favorite(favorite_id: int, payload: dict, user_id: int = Depends(current_user_id)):
+    meal_type = payload.get("meal_type")
+    with db.get_conn() as conn:
+        favorite = db.get_favorite(conn, user_id, favorite_id)
+        if not favorite:
+            raise HTTPException(404, "favorite not found")
+        if meal_type not in ALLOWED_MEAL_TYPES:
+            meal_type = favorite["meal_type"]
+        entry = db.insert_entry(
+            conn,
+            user_id=user_id,
+            created_at=tzutil.now_local_naive().isoformat(timespec="seconds"),
+            meal_type=meal_type,
+            source="favorite",
+            items_json=favorite["items_json"],
+            total_calories=favorite["total_calories"],
+            protein_g=favorite["protein_g"],
+            carbs_g=favorite["carbs_g"],
+            fat_g=favorite["fat_g"],
+            confidence="manual",
+            energy_score=favorite["energy_score"],
+        )
     return _entry_to_public(entry)
 
 

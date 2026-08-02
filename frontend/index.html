@@ -139,6 +139,7 @@
       <div class="add-meal-actions">
         <button class="btn btn-primary" id="takePhotoBtn"><span class="btn-icon">📷</span> <span data-i18n="add_photo">Add Photo</span></button>
         <button class="btn btn-secondary" id="manualEntryBtn"><span class="btn-icon">✏️</span> <span data-i18n="manual">Manual</span></button>
+        <button class="btn btn-secondary" id="quickAddBtn"><span class="btn-icon">⭐</span> <span data-i18n="quick_add_btn">Quick Add</span></button>
       </div>
       <input type="file" id="photoInput" accept="image/*" capture="environment">
       <input type="file" id="photoInput2" accept="image/*" capture="environment">
@@ -151,6 +152,17 @@
 
   <!-- HISTORY -->
   <section class="tab-panel" id="tab-history">
+    <div class="card">
+      <h2 class="section-title" data-i18n="weight_trend_title">Weight Trend</h2>
+      <div class="field-row">
+        <div class="field" style="flex:1;margin-bottom:0">
+          <input type="number" id="weightLogInput" step="0.1" data-i18n-ph="weight_kg" placeholder="kg">
+        </div>
+        <button class="btn btn-primary" id="logWeightBtn" data-i18n="log_weight_btn">Log</button>
+      </div>
+      <div id="weightLogList" style="margin-top:10px"></div>
+    </div>
+
     <div class="card">
       <h2 class="section-title" data-i18n="history_title">Last 14 days</h2>
       <div id="historyList"></div>
@@ -309,6 +321,17 @@
     <div class="modal-actions">
       <button class="btn btn-secondary" id="manualCancelBtn" data-i18n="cancel">Cancel</button>
       <button class="btn btn-primary" id="manualSaveBtn" data-i18n="save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Favorites (quick add) modal -->
+<div class="modal-backdrop hidden" id="favoritesModal">
+  <div class="modal-sheet">
+    <h2 data-i18n="favorites_title">Favorites</h2>
+    <div id="favoritesList"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="favoritesCloseBtn" style="width:100%" data-i18n="close">Close</button>
     </div>
   </div>
 </div>

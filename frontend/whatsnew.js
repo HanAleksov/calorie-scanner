@@ -1,6 +1,19 @@
-const CURRENT_APP_VERSION = 4;
+const CURRENT_APP_VERSION = 5;
 
 const WHATS_NEW = [
+  {
+    version: 5,
+    en: [
+      "⚖️ Weight tracking — log your weight on the History tab and watch your trend over time.",
+      "⭐ Favorites — save any meal with a tap, then quick-add it again later without re-photographing or re-typing anything.",
+      "📋 Log straight from your AI meal plan — tap \"Log this\" on any planned meal to add it to today with one tap.",
+    ],
+    bg: [
+      "⚖️ Проследяване на тегло — запиши теглото си в раздел История и следи тенденцията си във времето.",
+      "⭐ Любими — запази кое да е хранене с едно докосване, после го добави отново само с едно докосване, без нова снимка или писане.",
+      "📋 Записвай директно от твоя AI хранителен план — докосни „Запиши“ на кое да е планирано хранене, за да го добавиш към деня с едно докосване.",
+    ],
+  },
   {
     version: 4,
     en: [

@@ -64,3 +64,24 @@ CREATE TABLE IF NOT EXISTS meal_plan (
     plan_json TEXT,
     generated_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS weight_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    logged_at TEXT NOT NULL,
+    weight_kg REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS favorites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    meal_type TEXT NOT NULL DEFAULT 'snack',
+    items_json TEXT NOT NULL,
+    total_calories INTEGER,
+    protein_g REAL,
+    carbs_g REAL,
+    fat_g REAL,
+    energy_score REAL,
+    created_at TEXT NOT NULL
+);

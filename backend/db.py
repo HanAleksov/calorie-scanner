@@ -169,6 +169,8 @@ def delete_user(conn, user_id: int) -> None:
     conn.execute("DELETE FROM meal_plan WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM water_log WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM daily_tip WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM weight_log WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM favorites WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
@@ -361,3 +363,60 @@ def set_meal_plan(conn, user_id: int, *, plan_json, generated_at):
         (user_id, plan_json, generated_at),
     )
     return get_meal_plan(conn, user_id)
+
+
+# ---------- weight log ----------
+
+def add_weight_entry(conn, user_id: int, weight_kg: float, logged_at: str) -> dict:
+    cur = conn.execute(
+        "INSERT INTO weight_log (user_id, logged_at, weight_kg) VALUES (?, ?, ?)",
+        (user_id, logged_at, weight_kg),
+    )
+    set_profile(conn, user_id, {"weight_kg": weight_kg})
+    row = conn.execute("SELECT * FROM weight_log WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return dict(row)
+
+
+def get_weight_log(conn, user_id: int, limit: int = 30) -> list:
+    rows = conn.execute(
+        "SELECT * FROM weight_log WHERE user_id = ? ORDER BY logged_at DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_weight_entry(conn, user_id: int, entry_id: int) -> None:
+    conn.execute("DELETE FROM weight_log WHERE id = ? AND user_id = ?", (entry_id, user_id))
+
+
+# ---------- favorites ----------
+
+def add_favorite(conn, user_id: int, *, name, meal_type, items_json,
+                  total_calories, protein_g, carbs_g, fat_g, energy_score, created_at) -> dict:
+    cur = conn.execute(
+        """INSERT INTO favorites
+           (user_id, name, meal_type, items_json, total_calories, protein_g, carbs_g, fat_g,
+            energy_score, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (user_id, name, meal_type, items_json, total_calories, protein_g, carbs_g, fat_g,
+         energy_score, created_at),
+    )
+    return get_favorite(conn, user_id, cur.lastrowid)
+
+
+def get_favorite(conn, user_id: int, favorite_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM favorites WHERE id = ? AND user_id = ?", (favorite_id, user_id)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_favorites(conn, user_id: int) -> list:
+    rows = conn.execute(
+        "SELECT * FROM favorites WHERE user_id = ? ORDER BY created_at DESC", (user_id,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_favorite(conn, user_id: int, favorite_id: int) -> None:
+    conn.execute("DELETE FROM favorites WHERE id = ? AND user_id = ?", (favorite_id, user_id))
