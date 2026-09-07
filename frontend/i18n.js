@@ -145,6 +145,30 @@ const TRANSLATIONS = {
     direction_up: "up",
     direction_down: "down",
 
+    tdee_adaptive_title: "Adaptive TDEE",
+    tdee_adaptive_desc: "Calculates your real maintenance calories from your actual logged weight and intake trend, not just a formula.",
+    tdee_adaptive_btn: "Recalculate From My Data",
+    tdee_adaptive_explain:
+      "Based on {days} days of weigh-ins and logged meals, your real maintenance is about {real_tdee} kcal/day — " +
+      "you've been trending {direction} at {velocity}kg/week. Adding a {buffer} kcal surplus buffer suggests " +
+      "{suggested_calories} kcal/day.",
+    tdee_adaptive_apply_btn: "Apply Adaptive Target",
+    tdee_adaptive_applied_toast: "Adaptive target applied — your calorie goal is updated",
+    tdee_insufficient_data: "Not enough data yet — log your weight and meals for at least {min_days} more days to unlock this.",
+    tdee_insufficient_reason_no_weight_history: "No weigh-ins logged yet.",
+    tdee_insufficient_reason_insufficient_weight_span: "Only {days} of {min_days} days of weigh-in history so far.",
+    tdee_insufficient_reason_insufficient_intake_logging: "Meals need to be logged more consistently — only {logged_days} of {days} days tracked so far.",
+
+    scale_optional_fields_label: "+ Add body composition (optional)",
+    fat_mass_kg_label: "Fat mass (kg)",
+    muscle_mass_kg_label: "Muscle mass (kg)",
+    water_pct_label: "Water (%)",
+    suggestion_under_fueled: "Gain rate has stalled ({weight_delta}kg over {days} days) — increase your target by {delta} kcal?",
+    suggestion_fat_spike: "Most of your recent gain has been fat, not muscle — trim your target by {delta} kcal?",
+    apply_suggestion_btn: "Apply",
+    ignore_suggestion_btn: "Ignore",
+    suggestion_applied_toast: "Target adjusted",
+
     water_title: "Water",
     energy_title: "Energy today",
     energy_no_data: "Log a photo meal to see this",
@@ -335,6 +359,30 @@ const TRANSLATIONS = {
       "1.6-2.2г/кг) за запазване на мускулната маса.",
     direction_up: "нагоре",
     direction_down: "надолу",
+
+    tdee_adaptive_title: "Адаптивен TDEE",
+    tdee_adaptive_desc: "Изчислява реалните ти поддържащи калории на база действителното ти тегло и хранителен прием, а не само по формула.",
+    tdee_adaptive_btn: "Преизчисли от моите данни",
+    tdee_adaptive_explain:
+      "На база {days} дни с измерено тегло и записани хранения, реалните ти поддържащи калории са около " +
+      "{real_tdee} кал./ден — тенденцията ти е {direction} с {velocity} кг/седмица. Добавяйки буфер от " +
+      "{buffer} кал. излишък, препоръчителните калории са {suggested_calories} кал./ден.",
+    tdee_adaptive_apply_btn: "Приложи адаптивната цел",
+    tdee_adaptive_applied_toast: "Адаптивната цел е приложена — калорийната ти цел е обновена",
+    tdee_insufficient_data: "Все още няма достатъчно данни — записвай тегло и хранения поне още {min_days} дни, за да отключиш това.",
+    tdee_insufficient_reason_no_weight_history: "Все още няма записано тегло.",
+    tdee_insufficient_reason_insufficient_weight_span: "Само {days} от {min_days} дни история с тегло досега.",
+    tdee_insufficient_reason_insufficient_intake_logging: "Храненията трябва да се записват по-последователно — само {logged_days} от {days} дни са проследени досега.",
+
+    scale_optional_fields_label: "+ Добави телесен състав (по избор)",
+    fat_mass_kg_label: "Мастна маса (кг)",
+    muscle_mass_kg_label: "Мускулна маса (кг)",
+    water_pct_label: "Вода (%)",
+    suggestion_under_fueled: "Темпото на качване спря ({weight_delta}кг за {days} дни) — да увелича ли целта с {delta} кал.?",
+    suggestion_fat_spike: "По-голямата част от скорошното качване е мазнини, не мускул — да намаля ли целта с {delta} кал.?",
+    apply_suggestion_btn: "Приложи",
+    ignore_suggestion_btn: "Пропусни",
+    suggestion_applied_toast: "Целта е коригирана",
 
     water_title: "Вода",
     energy_title: "Енергия днес",

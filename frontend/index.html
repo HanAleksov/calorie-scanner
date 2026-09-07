@@ -14,6 +14,9 @@
 
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -160,6 +163,12 @@
         </div>
         <button class="btn btn-primary" id="logWeightBtn" data-i18n="log_weight_btn">Log</button>
       </div>
+      <details class="manual-goals-details">
+        <summary data-i18n="scale_optional_fields_label">+ Add body composition (optional)</summary>
+        <div class="field"><label data-i18n="fat_mass_kg_label">Fat mass (kg)</label><input type="number" step="0.1" id="scaleFatMass"></div>
+        <div class="field"><label data-i18n="muscle_mass_kg_label">Muscle mass (kg)</label><input type="number" step="0.1" id="scaleMuscleMass"></div>
+        <div class="field"><label data-i18n="water_pct_label">Water (%)</label><input type="number" step="0.1" id="scaleWaterPct"></div>
+      </details>
       <div id="weightLogList" style="margin-top:10px"></div>
     </div>
 
@@ -246,6 +255,13 @@
       <button class="btn btn-primary" id="applyGoalsBtn" style="width:100%" data-i18n="apply_goals_btn">Apply These Goals</button>
     </div>
 
+    <div class="card" id="adaptiveTdeeCard">
+      <h2 class="section-title" data-i18n="tdee_adaptive_title">Adaptive TDEE</h2>
+      <p class="explain-text" data-i18n="tdee_adaptive_desc">Calculates your real maintenance calories from your actual logged weight and intake trend, not just a formula.</p>
+      <button class="btn btn-primary" id="calcAdaptiveTdeeBtn" style="width:100%" data-i18n="tdee_adaptive_btn">Recalculate From My Data</button>
+      <div id="adaptiveTdeeResult" style="margin-top:14px"></div>
+    </div>
+
     <div class="card">
       <div class="section-title-row">
         <h2 class="section-title" data-i18n="ai_meal_plan">AI Meal Plan</h2>
@@ -277,6 +293,7 @@
 <!-- Welcome modal -->
 <div class="modal-backdrop hidden" id="welcomeModal">
   <div class="modal-sheet">
+    <div class="sheet-handle"></div>
     <h2 data-i18n="welcome_title">Welcome 👋</h2>
     <p class="explain-text" id="welcomeBody" style="font-size:13.5px;line-height:1.6"></p>
     <button class="btn btn-primary" id="welcomeDismissBtn" style="width:100%" data-i18n="welcome_dismiss">Got it, let's go</button>
@@ -286,6 +303,7 @@
 <!-- Photo review modal (optional second angle before analyzing) -->
 <div class="modal-backdrop hidden" id="photoReviewModal">
   <div class="modal-sheet">
+    <div class="sheet-handle"></div>
     <h2 data-i18n="photo_review_title">Review Photo</h2>
     <div class="photo-preview-row" id="photoPreviewRow"></div>
     <button class="btn btn-secondary" id="addAngleBtn" style="width:100%" data-i18n="add_another_angle">+ Add another angle</button>
@@ -303,6 +321,7 @@
 <!-- What's New modal -->
 <div class="modal-backdrop hidden" id="whatsNewModal">
   <div class="modal-sheet">
+    <div class="sheet-handle"></div>
     <h2 data-i18n="whats_new_title">What's New</h2>
     <div id="whatsNewContent"></div>
     <button class="btn btn-primary" id="whatsNewCloseBtn" style="width:100%;margin-top:10px" data-i18n="close">Close</button>
@@ -312,6 +331,7 @@
 <!-- Manual entry modal -->
 <div class="modal-backdrop hidden" id="manualModal">
   <div class="modal-sheet">
+    <div class="sheet-handle"></div>
     <h2 data-i18n="manual_entry_title">Manual Entry</h2>
     <div class="field"><label data-i18n="description">Description</label><input type="text" id="manualDesc" data-i18n-ph="description_ph" placeholder="e.g. Protein shake"></div>
     <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="manualCals"></div>
@@ -328,6 +348,7 @@
 <!-- Favorites (quick add) modal -->
 <div class="modal-backdrop hidden" id="favoritesModal">
   <div class="modal-sheet">
+    <div class="sheet-handle"></div>
     <h2 data-i18n="favorites_title">Favorites</h2>
     <div id="favoritesList"></div>
     <div class="modal-actions">
@@ -339,6 +360,7 @@
 <!-- Edit entry modal -->
 <div class="modal-backdrop hidden" id="editModal">
   <div class="modal-sheet">
+    <div class="sheet-handle"></div>
     <h2 data-i18n="edit_entry_title">Edit Entry</h2>
 
     <div class="edit-section">
@@ -375,6 +397,7 @@
 <!-- Settings modal -->
 <div class="modal-backdrop hidden" id="settingsModal">
   <div class="modal-sheet">
+    <div class="sheet-handle"></div>
     <h2 data-i18n="settings_title">Settings</h2>
 
     <div class="field"><label data-i18n="your_name">Your name</label><input type="text" id="settingsName"></div>

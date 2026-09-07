@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 import tzutil
@@ -65,6 +65,14 @@ def _totals(entries: list[dict]) -> dict:
         "fat_g": round(sum(e["fat_g"] or 0 for e in entries), 1),
         "energy_avg": round(sum(scored) / len(scored), 1) if scored else None,
     }
+
+
+def _daily_calorie_totals(entries: list[dict]) -> list:
+    by_day: dict = {}
+    for e in entries:
+        day_key = e["created_at"][:10]
+        by_day[day_key] = by_day.get(day_key, 0) + (e["total_calories"] or 0)
+    return [(date.fromisoformat(k), v) for k, v in by_day.items()]
 
 
 def _validate_profile_payload(payload: dict):
@@ -291,8 +299,23 @@ def log_weight(payload: dict, user_id: int = Depends(current_user_id)):
     weight_kg = payload.get("weight_kg")
     if not isinstance(weight_kg, (int, float)) or weight_kg <= 0:
         raise HTTPException(400, "weight_kg must be a positive number")
+
+    optional_fields = {}
+    for field in ("fat_mass_kg", "muscle_mass_kg", "water_pct"):
+        value = payload.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, (int, float)) or value <= 0:
+            raise HTTPException(400, f"{field} must be a positive number")
+        if field == "water_pct" and value > 100:
+            raise HTTPException(400, "water_pct must be between 0 and 100")
+        optional_fields[field] = value
+
     with db.get_conn() as conn:
-        entry = db.add_weight_entry(conn, user_id, weight_kg, tzutil.now_local_naive().isoformat(timespec="seconds"))
+        entry = db.add_weight_entry(
+            conn, user_id, weight_kg, tzutil.now_local_naive().isoformat(timespec="seconds"),
+            **optional_fields,
+        )
     return entry
 
 
@@ -567,6 +590,27 @@ def suggested_goals(payload: dict, user_id: int = Depends(current_user_id)):
         return nutrition.calculate_targets(payload)
     except (TypeError, ValueError) as e:
         raise HTTPException(400, str(e))
+
+
+@app.get("/api/tdee/adaptive")
+def adaptive_tdee(user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        weight_entries = db.get_weight_log(conn, user_id, limit=60)
+        end = tzutil.today_local()
+        start = end - timedelta(days=nutrition.ADAPTIVE_LOOKBACK_DAYS - 1)
+        entries = db.get_entries_between(conn, user_id, start.isoformat(), end.isoformat())
+        goals = db.get_goals(conn, user_id)
+
+    daily_calories = _daily_calorie_totals(entries)
+    result = nutrition.calculate_adaptive_tdee(daily_calories, weight_entries)
+
+    if not result["insufficient_data"] and goals:
+        protein_g, fat_g = goals["protein_g"], goals["fat_g"]
+        result["protein_g"] = protein_g
+        result["fat_g"] = fat_g
+        result["carbs_g"] = round(max(result["suggested_calories"] - protein_g * 4 - fat_g * 9, 0) / 4)
+
+    return result
 
 
 @app.post("/api/meal-plan")

@@ -69,7 +69,10 @@ CREATE TABLE IF NOT EXISTS weight_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
     logged_at TEXT NOT NULL,
-    weight_kg REAL NOT NULL
+    weight_kg REAL NOT NULL,
+    fat_mass_kg REAL,      -- optional smart-scale body composition, manually entered
+    muscle_mass_kg REAL,
+    water_pct REAL
 );
 
 CREATE TABLE IF NOT EXISTS favorites (

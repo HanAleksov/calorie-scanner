@@ -11,7 +11,15 @@ and what they've logged), give ONE short, actionable tip or piece of encourageme
 the day. Keep it to 1-2 short sentences, conversational, no lecturing. If they're on track, it's
 completely fine to just say so and encourage them to keep going — don't invent a problem that isn't
 there. Consider the time of day: e.g. don't suggest breakfast in the evening, and if it's late in the
-day and they're well under their calorie goal with few hours left, that's worth a gentle mention."""
+day and they're well under their calorie goal with few hours left, that's worth a gentle mention.
+If their goal type is "gain": they're deliberately eating in a calorie surplus to build muscle, so
+being at or over their calorie/protein goal is success, not a problem — never suggest cutting back.
+If it's afternoon/evening and they're still meaningfully under their calorie or protein target with
+few hours of eating windows left, be direct and specific about hitting the surplus today (e.g. name
+a concrete easy add like a protein shake or a calorie-dense snack) rather than gently suggesting it
+— hitting the number matters more here than for a "lose"/"maintain" goal. If their goal type is
+"lose", keep the current gentle, encouraging tone about staying under budget; don't add urgency
+there."""
 
 RESPONSE_SCHEMA = {
     "type": "object",

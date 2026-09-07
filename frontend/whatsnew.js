@@ -1,6 +1,19 @@
-const CURRENT_APP_VERSION = 5;
+const CURRENT_APP_VERSION = 6;
 
 const WHATS_NEW = [
+  {
+    version: 6,
+    en: [
+      "📈 Adaptive TDEE — on the Plan tab, calculates your real maintenance calories from your actual logged weight and meals, not just a formula, and suggests a surplus target to hit.",
+      "⚖️ Body composition — optionally log fat mass, muscle mass, and body water % alongside your weight for smarter target suggestions.",
+      "🎨 New look — a modern dark theme with glass cards, smoother animations, and drag-to-dismiss sheets.",
+    ],
+    bg: [
+      "📈 Адаптивен TDEE — в раздел План изчислява реалните ти поддържащи калории на база действителното ти тегло и хранения, а не само по формула, и предлага цел за излишък.",
+      "⚖️ Телесен състав — по избор записвай мастна маса, мускулна маса и % вода в тялото заедно с теглото си за по-умни препоръки за целта.",
+      "🎨 Нов облик — модерна тъмна тема със стъклени карти, по-плавни анимации и плъзгане за затваряне на прозорците.",
+    ],
+  },
   {
     version: 5,
     en: [

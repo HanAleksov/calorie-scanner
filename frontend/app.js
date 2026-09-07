@@ -1,4 +1,7 @@
-const state = { entryBeingEdited: null, units: "metric", pendingPinUserId: null, pendingPhotos: [] };
+const state = {
+  entryBeingEdited: null, units: "metric", pendingPinUserId: null, pendingPhotos: [],
+  goalType: null, lastAdaptiveTdee: null,
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -328,15 +331,30 @@ $("deleteProfileBtn").addEventListener("click", async () => {
 
 // ================== TODAY ==================
 const RING_CIRCUMFERENCE = 2 * Math.PI * 62;
+const UNDER_TARGET_THRESHOLD = 0.85; // gain users: flag calories/macros as "needs attention" only below 85% of goal
 
 async function loadToday() {
-  const res = await apiFetch("/api/today");
+  const [res, profileRes] = await Promise.all([apiFetch("/api/today"), apiFetch("/api/profile")]);
   if (!res.ok) return;
   const data = await res.json();
+  if (profileRes.ok) {
+    const profile = await profileRes.json();
+    state.goalType = profile && profile.goal_type;
+  }
   renderTotals(data.totals, data.goals);
   renderEntries(data.entries);
   renderWater(data.water_ml, data.goals.water_ml);
   loadCachedTip();
+}
+
+function applyGoalAwareClass(el, value, goal) {
+  el.classList.remove("over", "over-good", "under-warning");
+  const isGainGoal = state.goalType === "gain";
+  if (value > goal) {
+    el.classList.add(isGainGoal ? "over-good" : "over");
+  } else if (isGainGoal && goal && value < goal * UNDER_TARGET_THRESHOLD) {
+    el.classList.add("under-warning");
+  }
 }
 
 function renderTotals(totals, goals) {
@@ -349,7 +367,7 @@ function renderTotals(totals, goals) {
 
   const ring = $("calRingFill");
   ring.style.strokeDashoffset = RING_CIRCUMFERENCE * (1 - pct);
-  ring.classList.toggle("over", totals.calories > goals.calories);
+  applyGoalAwareClass(ring, totals.calories, goals.calories);
 
   setMacro("protein", totals.protein_g, goals.protein_g);
   setMacro("carbs", totals.carbs_g, goals.carbs_g);
@@ -419,7 +437,7 @@ function setMacro(name, value, goal) {
   const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
   const fill = $(`${name}Fill`);
   fill.style.width = pct + "%";
-  fill.classList.toggle("over", value > goal);
+  applyGoalAwareClass(fill, value, goal);
 }
 
 const MEAL_LABEL_KEY = { breakfast: "meal_breakfast", lunch: "meal_lunch", dinner: "meal_dinner", snack: "meal_snack" };
@@ -792,12 +810,22 @@ async function loadWeightLog() {
         deltaHtml = `<span class="delta ${cls}">${sign}${diff}kg</span>`;
       }
       const label = new Date(entry.logged_at.replace(" ", "T")).toLocaleDateString(locale, { month: "short", day: "numeric" });
+      const compositionParts = [];
+      if (entry.fat_mass_kg != null) compositionParts.push(`${t("fat_mass_kg_label")}: ${entry.fat_mass_kg}kg`);
+      if (entry.muscle_mass_kg != null) compositionParts.push(`${t("muscle_mass_kg_label")}: ${entry.muscle_mass_kg}kg`);
+      if (entry.water_pct != null) compositionParts.push(`${t("water_pct_label")}: ${entry.water_pct}%`);
+      const compositionHtml = compositionParts.length
+        ? `<div class="weight-row-composition">${compositionParts.join(" · ")}</div>`
+        : "";
       return `
         <div class="weight-row" data-id="${entry.id}">
-          <div class="date">${label}</div>
-          <div class="kg">${entry.weight_kg}kg</div>
-          ${deltaHtml}
-          <button class="delete-weight-btn" title="${t("delete")}">🗑</button>
+          <div class="weight-row-main">
+            <div class="date">${label}</div>
+            <div class="kg">${entry.weight_kg}kg</div>
+            ${deltaHtml}
+            <button class="delete-weight-btn" title="${t("delete")}">🗑</button>
+          </div>
+          ${compositionHtml}
         </div>`;
     })
     .join("");
@@ -817,16 +845,25 @@ $("logWeightBtn").addEventListener("click", async () => {
     toast(t("enter_weight_first"));
     return;
   }
+  const payload = { weight_kg: weightKg };
+  const fatMass = Number($("scaleFatMass").value);
+  const muscleMass = Number($("scaleMuscleMass").value);
+  const waterPct = Number($("scaleWaterPct").value);
+  if (fatMass > 0) payload.fat_mass_kg = fatMass;
+  if (muscleMass > 0) payload.muscle_mass_kg = muscleMass;
+  if (waterPct > 0) payload.water_pct = waterPct;
+
   const res = await apiFetch("/api/weight", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ weight_kg: weightKg }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     toast(t("something_wrong"));
     return;
   }
   toast(t("weight_logged_toast"));
+  ["scaleFatMass", "scaleMuscleMass", "scaleWaterPct"].forEach((id) => ($(id).value = ""));
   loadWeightLog();
 });
 
@@ -944,6 +981,115 @@ $("applyGoalsBtn").addEventListener("click", async () => {
   loadGoalsForm();
   loadToday();
 });
+
+// ---------- Adaptive TDEE ----------
+$("calcAdaptiveTdeeBtn").addEventListener("click", async () => {
+  const btn = $("calcAdaptiveTdeeBtn");
+  const original = btn.textContent;
+  btn.innerHTML = `<span class="spinner"></span> ${t("calculating")}`;
+  btn.disabled = true;
+  try {
+    const res = await apiFetch("/api/tdee/adaptive");
+    const data = await res.json();
+    renderAdaptiveTdee(data);
+  } catch (err) {
+    toast(t("something_wrong"));
+  } finally {
+    btn.textContent = original;
+    btn.disabled = false;
+  }
+});
+
+const SUGGESTION_MESSAGE_KEY = { under_fueled: "suggestion_under_fueled", fat_spike: "suggestion_fat_spike" };
+
+function renderAdaptiveTdee(data) {
+  const el = $("adaptiveTdeeResult");
+  if (data.insufficient_data) {
+    const reasonKey = `tdee_insufficient_reason_${data.reason}`;
+    el.innerHTML = `
+      <p class="explain-text">${t("tdee_insufficient_data", { min_days: data.min_days_required })}</p>
+      <p class="explain-text">${t(reasonKey, { days: data.elapsed_days, min_days: data.min_days_required, logged_days: data.days_with_intake_logged })}</p>`;
+    return;
+  }
+  state.lastAdaptiveTdee = data;
+
+  const suggestionsHtml = (data.suggestions || [])
+    .map((s, i) => {
+      const msgKey = SUGGESTION_MESSAGE_KEY[s.type];
+      const message = t(msgKey, { delta: Math.abs(s.calorie_delta), weight_delta: s.weight_delta_kg, days: data.elapsed_days });
+      return `
+        <div class="suggestion-card" data-idx="${i}">
+          <p class="explain-text" style="margin:0 0 10px">${message}</p>
+          <div class="modal-actions" style="margin-top:0">
+            <button class="btn btn-secondary ignore-suggestion-btn" data-delta="${s.calorie_delta}">${t("ignore_suggestion_btn")}</button>
+            <button class="btn btn-primary apply-suggestion-btn" data-delta="${s.calorie_delta}">${t("apply_suggestion_btn")}</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+
+  el.innerHTML = `
+    <div class="target-grid">
+      <div class="target-cell"><div class="target-value">${data.suggested_calories}</div><div class="target-label">${t("calories")}</div></div>
+      <div class="target-cell"><div class="target-value">${data.protein_g}g</div><div class="target-label">${t("protein")}</div></div>
+      <div class="target-cell"><div class="target-value">${data.carbs_g}g</div><div class="target-label">${t("carbs")}</div></div>
+      <div class="target-cell"><div class="target-value">${data.fat_g}g</div><div class="target-label">${t("fat")}</div></div>
+    </div>
+    <p class="explain-text">${t("tdee_adaptive_explain", {
+      days: data.elapsed_days,
+      real_tdee: data.real_tdee,
+      direction: data.weight_velocity_kg_week >= 0 ? t("direction_up") : t("direction_down"),
+      velocity: Math.abs(data.weight_velocity_kg_week).toFixed(2),
+      buffer: data.surplus_buffer_kcal,
+      suggested_calories: data.suggested_calories,
+    })}</p>
+    <button class="btn btn-primary" id="applyAdaptiveTdeeBtn" style="width:100%">${t("tdee_adaptive_apply_btn")}</button>
+    ${suggestionsHtml}`;
+
+  $("applyAdaptiveTdeeBtn").addEventListener("click", async () => {
+    await apiFetch("/api/goals", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        calories: state.lastAdaptiveTdee.suggested_calories,
+        protein_g: state.lastAdaptiveTdee.protein_g,
+        carbs_g: state.lastAdaptiveTdee.carbs_g,
+        fat_g: state.lastAdaptiveTdee.fat_g,
+      }),
+    });
+    toast(t("tdee_adaptive_applied_toast"));
+    loadGoalsForm();
+    loadToday();
+  });
+
+  el.querySelectorAll(".ignore-suggestion-btn").forEach((btn) =>
+    btn.addEventListener("click", (ev) => ev.target.closest(".suggestion-card").remove())
+  );
+  el.querySelectorAll(".apply-suggestion-btn").forEach((btn) =>
+    btn.addEventListener("click", async (ev) => {
+      const card = ev.target.closest(".suggestion-card");
+      const delta = Number(btn.dataset.delta);
+      const goalsRes = await apiFetch("/api/goals");
+      const goals = await goalsRes.json();
+      const newCalories = goals.calories + delta;
+      const carbsG = Math.max(newCalories - goals.protein_g * 4 - goals.fat_g * 9, 0) / 4;
+      await apiFetch("/api/goals", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          calories: newCalories,
+          protein_g: goals.protein_g,
+          carbs_g: Math.round(carbsG),
+          fat_g: goals.fat_g,
+        }),
+      });
+      toast(t("suggestion_applied_toast"));
+      card.remove();
+      loadGoalsForm();
+      loadToday();
+    })
+  );
+}
 
 // ---------- AI meal plan ----------
 function renderMealPlan(plan) {
@@ -1063,6 +1209,54 @@ $("saveGoalsBtn").addEventListener("click", async () => {
   toast(t("goals_saved"));
   loadToday();
 });
+
+// ---------- Bottom-sheet drag-to-dismiss ----------
+function attachSheetDrag(sheetEl, closeFn) {
+  const handle = sheetEl.querySelector(".sheet-handle");
+  if (!handle) return;
+  let startY = 0, dragging = false, lastY = 0, lastT = 0, velocity = 0;
+  const onMove = (e) => {
+    if (!dragging) return;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    const dy = Math.max(0, y - startY);
+    const now = Date.now();
+    if (now > lastT) velocity = (y - lastY) / (now - lastT);
+    lastY = y; lastT = now;
+    sheetEl.style.transition = "none";
+    sheetEl.style.transform = `translateY(${dy}px)`;
+  };
+  const onEnd = () => {
+    if (!dragging) return;
+    dragging = false;
+    const dy = Math.max(0, lastY - startY);
+    sheetEl.style.transition = "";
+    if (dy > sheetEl.offsetHeight * 0.25 || velocity > 0.5) {
+      sheetEl.style.transform = "translateY(100%)";
+      setTimeout(() => {
+        sheetEl.style.transform = "";
+        closeFn();
+      }, 200);
+    } else {
+      sheetEl.style.transform = "";
+    }
+  };
+  handle.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    startY = lastY = e.clientY;
+    lastT = Date.now();
+    velocity = 0;
+  });
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onEnd);
+}
+
+attachSheetDrag($("welcomeModal"), () => $("welcomeModal").classList.add("hidden"));
+attachSheetDrag($("photoReviewModal"), closePhotoReview);
+attachSheetDrag($("whatsNewModal"), () => $("whatsNewModal").classList.add("hidden"));
+attachSheetDrag($("manualModal"), () => $("manualModal").classList.add("hidden"));
+attachSheetDrag($("favoritesModal"), () => $("favoritesModal").classList.add("hidden"));
+attachSheetDrag($("editModal"), () => $("editModal").classList.add("hidden"));
+attachSheetDrag($("settingsModal"), () => $("settingsModal").classList.add("hidden"));
 
 // ---------- Service worker ----------
 if ("serviceWorker" in navigator) {

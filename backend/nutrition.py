@@ -30,6 +30,8 @@ is added during Sofia's hot months (Jun-Aug), when insensible/sweat losses
 run higher even without structured exercise.
 """
 
+from datetime import date, timedelta
+
 import tzutil
 
 ACTIVITY_MULTIPLIERS = {
@@ -45,7 +47,8 @@ GOAL_RATE_KCAL_PER_KG = 7700  # commonly cited kcal-per-kg-bodyfat equivalent
 DEFAULT_RATE_KG_PER_WEEK = {
     "lose": -0.45,
     "maintain": 0.0,
-    "gain": 0.25,
+    "gain": 0.4,  # midpoint of a 0.3-0.5kg/week hardgainer target; matches what a
+                  # 400kcal/day surplus implies (400*7/7700 ~= 0.36kg/wk)
 }
 
 WATER_ML_PER_KG = 35  # general hydration baseline
@@ -61,6 +64,28 @@ ACTIVITY_WATER_BONUS_ML = {
 SUMMER_MONTHS = {6, 7, 8}  # Jun-Aug in Europe/Sofia
 SUMMER_WATER_BONUS_ML = 500
 
+# ---------- Adaptive TDEE ----------
+# Real_TDEE = avg_daily_intake - (weight_trend_delta_kg * 7700 / elapsed_days), which
+# generalizes the commonly-cited "14-day rolling adaptive TDEE" formula to whatever span
+# of real data is actually available (converges to the literal /14 once a full window
+# exists). This is a separate, additive path from calculate_targets()'s static formula —
+# nothing here runs until a user has real weigh-in + intake history.
+ADAPTIVE_WINDOW_DAYS = 14
+ADAPTIVE_LOOKBACK_DAYS = 21          # extra days fetched so the EWMA is warmed up by the
+                                      # time the 14-day window starts
+ADAPTIVE_MIN_ELAPSED_DAYS = 10       # earliest the engine will report a number at all
+ADAPTIVE_MIN_INTAKE_COVERAGE = 0.7   # fraction of elapsed days needing a logged
+                                      # total_calories > 0 for the intake average to be trusted
+EWMA_ALPHA = 0.2                     # ~9-day half-life smoothing of daily weight noise
+ADAPTIVE_SURPLUS_BUFFER_KCAL = 400
+
+# ---------- Scale-based adjustment suggestions ----------
+ADJUSTMENT_UNDER_FUELED_MIN_GAIN_KG = 0.5
+ADJUSTMENT_UNDER_FUELED_DELTA_KCAL = 200
+ADJUSTMENT_FAT_SPIKE_RATIO = 0.7
+ADJUSTMENT_FAT_SPIKE_DELTA_KCAL = -100
+ADJUSTMENT_MIN_FAT_MASS_READINGS = 2
+
 
 def calculate_water_ml(weight_kg: float, activity_level: str, is_summer: bool) -> int:
     total = weight_kg * WATER_ML_PER_KG
@@ -68,6 +93,171 @@ def calculate_water_ml(weight_kg: float, activity_level: str, is_summer: bool) -
     if is_summer:
         total += SUMMER_WATER_BONUS_ML
     return round(total / 50) * 50  # round to a sane 50ml increment
+
+
+def _ewma_from_daily(raw_by_date: dict, as_of: date, lookback_days: int, alpha: float) -> list:
+    """Forward-fill gap days (no weigh-in that day means "no new evidence", not a guessed
+    value) and run an EWMA over the resulting daily series. Returns an ascending list of
+    {"date": iso, "raw": value_or_None_if_filled, "smoothed": value} dicts starting from
+    the first day that actually has data within the window."""
+    window_start = as_of - timedelta(days=lookback_days - 1)
+    in_window = {d: v for d, v in raw_by_date.items() if window_start <= d <= as_of}
+    if len(in_window) < 2:
+        return []
+
+    first_date = min(in_window)
+    series = []
+    last_raw = None
+    smoothed = None
+    d = first_date
+    while d <= as_of:
+        if d in in_window:
+            last_raw = in_window[d]
+        value = last_raw
+        smoothed = value if smoothed is None else alpha * value + (1 - alpha) * smoothed
+        series.append({"date": d.isoformat(), "raw": in_window.get(d), "smoothed": round(smoothed, 3)})
+        d += timedelta(days=1)
+    return series
+
+
+def ewma_weight_trend(weight_entries: list, as_of: date | None = None,
+                       lookback_days: int = ADAPTIVE_LOOKBACK_DAYS, alpha: float = EWMA_ALPHA) -> list:
+    """weight_entries: rows from db.get_weight_log (order-agnostic, any mix of dates).
+    Buckets by calendar day (averaging same-day duplicates), then smooths. Returns []
+    when there's under 2 distinct days of data in the window — the caller's signal for
+    insufficient data."""
+    as_of = as_of or tzutil.today_local()
+    raw_by_date: dict = {}
+    counts: dict = {}
+    for entry in weight_entries:
+        d = date.fromisoformat(entry["logged_at"][:10])
+        raw_by_date[d] = raw_by_date.get(d, 0) + entry["weight_kg"]
+        counts[d] = counts.get(d, 0) + 1
+    raw_by_date = {d: v / counts[d] for d, v in raw_by_date.items()}
+
+    series = _ewma_from_daily(raw_by_date, as_of, lookback_days, alpha)
+    return [{"date": row["date"], "raw_kg": row["raw"], "smoothed_kg": row["smoothed"]} for row in series]
+
+
+def _evaluate_adjustment_rules(weight_delta_kg: float, weight_entries: list,
+                                effective_start: date, as_of: date) -> list:
+    """Scale-driven "should we nudge the target" checks, evaluated over the same window
+    calculate_adaptive_tdee already computed. Never raises on missing/sparse data — a
+    rule that can't be evaluated (e.g. no fat_mass_kg logged) simply doesn't fire."""
+    suggestions = []
+
+    if weight_delta_kg < ADJUSTMENT_UNDER_FUELED_MIN_GAIN_KG:
+        suggestions.append({
+            "type": "under_fueled",
+            "calorie_delta": ADJUSTMENT_UNDER_FUELED_DELTA_KCAL,
+            "weight_delta_kg": round(weight_delta_kg, 2),
+        })
+
+    # Bucket ALL fat_mass_kg readings (not just those inside the scored window) so the
+    # EWMA gets the same ADAPTIVE_LOOKBACK_DAYS warmup buffer the main weight trend gets —
+    # restricting to the window first would cold-start the smoothing mid-window and
+    # systematically understate the fat trend.
+    fat_by_date: dict = {}
+    fat_counts: dict = {}
+    for entry in weight_entries:
+        if entry.get("fat_mass_kg") is None:
+            continue
+        d = date.fromisoformat(entry["logged_at"][:10])
+        fat_by_date[d] = fat_by_date.get(d, 0) + entry["fat_mass_kg"]
+        fat_counts[d] = fat_counts.get(d, 0) + 1
+    fat_by_date = {d: v / fat_counts[d] for d, v in fat_by_date.items()}
+
+    readings_in_window = sum(1 for d in fat_by_date if effective_start <= d <= as_of)
+    if readings_in_window >= ADJUSTMENT_MIN_FAT_MASS_READINGS:
+        fat_series = _ewma_from_daily(fat_by_date, as_of, ADAPTIVE_LOOKBACK_DAYS, EWMA_ALPHA)
+        # Only trust the delta if the (warmed-up) fat series actually reaches back to the
+        # same effective_start the weight delta was measured from — otherwise the two
+        # deltas would cover different spans and the ratio wouldn't mean anything.
+        if fat_series and fat_series[0]["date"] <= effective_start.isoformat():
+            fat_series_by_date = {row["date"]: row["smoothed"] for row in fat_series}
+            fat_mass_delta_kg = fat_series_by_date[as_of.isoformat()] - fat_series_by_date[effective_start.isoformat()]
+            if weight_delta_kg > 0 and (fat_mass_delta_kg / weight_delta_kg) > ADJUSTMENT_FAT_SPIKE_RATIO:
+                suggestions.append({
+                    "type": "fat_spike",
+                    "calorie_delta": ADJUSTMENT_FAT_SPIKE_DELTA_KCAL,
+                    "fat_mass_delta_kg": round(fat_mass_delta_kg, 2),
+                    "weight_delta_kg": round(weight_delta_kg, 2),
+                })
+
+    return suggestions
+
+
+def calculate_adaptive_tdee(daily_calories: list, weight_entries: list,
+                             surplus_buffer_kcal: int = ADAPTIVE_SURPLUS_BUFFER_KCAL,
+                             as_of: date | None = None) -> dict:
+    """daily_calories: list of (date, total_kcal) tuples, one per day that has at least
+    one logged meal (days with nothing logged are simply absent, not zero).
+    weight_entries: rows from db.get_weight_log."""
+    as_of = as_of or tzutil.today_local()
+    series = ewma_weight_trend(weight_entries, as_of=as_of)
+    if not series:
+        return {
+            "insufficient_data": True,
+            "reason": "no_weight_history",
+            "elapsed_days": 0,
+            "days_with_intake_logged": 0,
+            "min_days_required": ADAPTIVE_MIN_ELAPSED_DAYS,
+            "suggestions": [],
+        }
+
+    first_available = date.fromisoformat(series[0]["date"])
+    effective_start = max(first_available, as_of - timedelta(days=ADAPTIVE_WINDOW_DAYS - 1))
+    elapsed_days = (as_of - effective_start).days + 1
+
+    if elapsed_days < ADAPTIVE_MIN_ELAPSED_DAYS:
+        return {
+            "insufficient_data": True,
+            "reason": "insufficient_weight_span",
+            "elapsed_days": elapsed_days,
+            "days_with_intake_logged": 0,
+            "min_days_required": ADAPTIVE_MIN_ELAPSED_DAYS,
+            "suggestions": [],
+        }
+
+    series_by_date = {row["date"]: row["smoothed_kg"] for row in series}
+    start_kg = series_by_date[effective_start.isoformat()]
+    end_kg = series_by_date[as_of.isoformat()]
+    weight_delta_kg = end_kg - start_kg
+
+    intake_in_window = [kcal for d, kcal in daily_calories if effective_start <= d <= as_of and kcal > 0]
+    coverage = len(intake_in_window) / elapsed_days
+
+    if coverage < ADAPTIVE_MIN_INTAKE_COVERAGE:
+        return {
+            "insufficient_data": True,
+            "reason": "insufficient_intake_logging",
+            "elapsed_days": elapsed_days,
+            "days_with_intake_logged": len(intake_in_window),
+            "min_days_required": ADAPTIVE_MIN_ELAPSED_DAYS,
+            "suggestions": [],
+        }
+
+    avg_daily_intake = sum(intake_in_window) / len(intake_in_window)
+    daily_energy_balance = (weight_delta_kg * GOAL_RATE_KCAL_PER_KG) / elapsed_days
+    real_tdee = avg_daily_intake - daily_energy_balance
+    weight_velocity_kg_week = (weight_delta_kg / elapsed_days) * 7
+    suggested_calories = round(real_tdee + surplus_buffer_kcal)
+
+    return {
+        "insufficient_data": False,
+        "real_tdee": round(real_tdee),
+        "avg_daily_intake": round(avg_daily_intake),
+        "weight_delta_kg": round(weight_delta_kg, 2),
+        "weight_velocity_kg_week": round(weight_velocity_kg_week, 3),
+        "surplus_buffer_kcal": surplus_buffer_kcal,
+        "suggested_calories": suggested_calories,
+        "elapsed_days": elapsed_days,
+        "days_with_intake_logged": len(intake_in_window),
+        "window_start": effective_start.isoformat(),
+        "window_end": as_of.isoformat(),
+        "method": "EWMA-smoothed weight trend vs. logged intake over the trailing window",
+        "suggestions": _evaluate_adjustment_rules(weight_delta_kg, weight_entries, effective_start, as_of),
+    }
 
 
 def calculate_bmr(weight_kg: float, height_cm: float, age: int, sex: str) -> float:

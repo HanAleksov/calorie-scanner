@@ -48,6 +48,19 @@ adjust that detail only. Either way, do not let the note cause you to re-describ
 re-estimate the rest of the plate differently than what the photo itself shows — everything the note
 doesn't mention should still be assessed purely from the image(s).
 
+COOKING FATS: Cooking method adds calories that often aren't visually obvious — don't let a dish
+"look lean" talk you out of accounting for it. Frying, sautéing, pan-searing, stir-frying, and
+roasting/basting typically add absorbed oil, butter, or ghee that's rarely fully visible as a
+puddle or sheen in the photo. When you can identify or infer the cooking method (a glossy/browned
+surface, a stir-fry, fried batter, a sautéed vegetable side, a curry or dish from a cuisine that
+commonly cooks with generous oil/ghee/butter), add a reasonable fat estimate for the absorbed
+cooking fat on top of the ingredient's own inherent fat — do not estimate as if it were steamed,
+boiled, or raw. As a rough anchor: a home-cooked stir-fry or sautéed vegetable portion typically
+absorbs 1-2 tsp (5-10g) of oil per serving; a fried or deep-fried item can absorb substantially
+more depending on batter/breading and surface area. If you can't tell whether a method used added
+fat, let this raise your confidence rating toward "low"/"medium" rather than silently defaulting
+to the leanest interpretation — but always give a number, never omit the fat.
+
 If the dish is a stacked or mixed dish, has sauces, or portions are hard to judge, set confidence to
 "low" — do not present a guess as precise. Set confidence to "medium" when some items are clear but
 others are estimated. Set confidence to "high" only when portions and ingredients are clearly

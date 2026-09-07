@@ -59,6 +59,15 @@ def _migrate(conn) -> None:
     if _table_exists(conn, "goals") and "water_ml" not in _table_columns(conn, "goals"):
         conn.execute("ALTER TABLE goals ADD COLUMN water_ml INTEGER NOT NULL DEFAULT 2000")
 
+    if _table_exists(conn, "weight_log"):
+        wl_cols = _table_columns(conn, "weight_log")
+        if "fat_mass_kg" not in wl_cols:
+            conn.execute("ALTER TABLE weight_log ADD COLUMN fat_mass_kg REAL")
+        if "muscle_mass_kg" not in wl_cols:
+            conn.execute("ALTER TABLE weight_log ADD COLUMN muscle_mass_kg REAL")
+        if "water_pct" not in wl_cols:
+            conn.execute("ALTER TABLE weight_log ADD COLUMN water_pct REAL")
+
     # goals/profile/meal_plan changed primary key from a hardcoded id=1 to user_id —
     # that's a PK shape change SQLite can't ALTER in place, so move the old table
     # aside and let schema.sql create the new shape fresh.
@@ -367,10 +376,13 @@ def set_meal_plan(conn, user_id: int, *, plan_json, generated_at):
 
 # ---------- weight log ----------
 
-def add_weight_entry(conn, user_id: int, weight_kg: float, logged_at: str) -> dict:
+def add_weight_entry(conn, user_id: int, weight_kg: float, logged_at: str, *,
+                      fat_mass_kg: float | None = None, muscle_mass_kg: float | None = None,
+                      water_pct: float | None = None) -> dict:
     cur = conn.execute(
-        "INSERT INTO weight_log (user_id, logged_at, weight_kg) VALUES (?, ?, ?)",
-        (user_id, logged_at, weight_kg),
+        """INSERT INTO weight_log (user_id, logged_at, weight_kg, fat_mass_kg, muscle_mass_kg, water_pct)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (user_id, logged_at, weight_kg, fat_mass_kg, muscle_mass_kg, water_pct),
     )
     set_profile(conn, user_id, {"weight_kg": weight_kg})
     row = conn.execute("SELECT * FROM weight_log WHERE id = ?", (cur.lastrowid,)).fetchone()
