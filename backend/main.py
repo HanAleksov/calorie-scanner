@@ -1,14 +1,20 @@
 import json
 import os
+import sys
 import uuid
 from datetime import date, timedelta
 from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))  # so `import db`/`import vision`/etc. resolve
+                                            # regardless of the process's CWD at launch
 
 import tzutil
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(BACKEND_DIR / ".env")  # explicit path — don't rely on CWD-based .env discovery
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -20,7 +26,6 @@ import meal_plan as meal_plan_module
 import nutrition
 import vision
 
-BACKEND_DIR = Path(__file__).parent
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
 UPLOADS_DIR = Path(os.environ.get("CALORIE_UPLOADS_DIR", BACKEND_DIR / "uploads"))
 UPLOADS_DIR.mkdir(exist_ok=True, parents=True)
