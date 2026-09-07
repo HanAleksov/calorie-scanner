@@ -462,6 +462,33 @@ nav.tabbar button.active { color: var(--accent); font-weight: 600; background: v
 .meal-card .meal-rationale { font-size: 11.5px; color: var(--text-dim); font-style: italic; margin-top: 6px; }
 .meal-card .meal-macros { font-size: 11.5px; color: var(--text-dim); margin-top: 8px; }
 .plan-notes { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+/* Analyst Feed */
+.analyst-feed-card { border-left: 3px solid var(--accent); }
+.analyst-feed-entry { display: flex; gap: 10px; align-items: flex-start; }
+.analyst-feed-icon { flex-shrink: 0; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: flex; align-items: center; justify-content: center; }
+.analyst-feed-body { flex: 1; min-width: 0; }
+.analyst-feed-reason { font-size: 13px; line-height: 1.5; }
+.analyst-feed-delta { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; margin-top: 5px; }
+.analyst-feed-delta.up { background: var(--accent-soft); color: var(--accent); }
+.analyst-feed-delta.down { background: var(--surface-2); color: var(--text-dim); }
+.analyst-feed-meta { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.analyst-feed-history-row { font-size: 12px; color: var(--text-dim); padding: 8px 0; border-bottom: 1px solid var(--border); }
+.analyst-feed-history-row:last-child { border-bottom: none; }
+
+/* Settings toggle switch */
+.settings-toggle-row { display: flex; align-items: center; gap: 10px; margin: 14px 0 6px; font-size: 13.5px; font-weight: 600; }
+.toggle-switch { position: relative; display: inline-block; width: 44px; height: 26px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; inset: 0; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9999px; cursor: pointer; transition: background 0.2s; }
+.toggle-slider::before { content: ""; position: absolute; width: 20px; height: 20px; left: 2px; top: 2px; background: var(--text-dim); border-radius: 50%; transition: transform 0.2s var(--ios-spring), background 0.2s; }
+.toggle-switch input:checked + .toggle-slider { background: var(--accent-gradient); border-color: transparent; }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); background: white; }
+
+/* Gap meal recommender */
+.gap-meal-option { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 11px 13px; margin-top: 8px; background: var(--surface-2); }
+.gap-meal-name { font-weight: 700; font-size: 13px; }
+.gap-meal-macros { font-size: 12px; color: var(--text-dim); margin-top: 3px; }
 .plan-meta { font-size: 11px; color: var(--text-dim); text-align: right; margin-top: 10px; }
 
 .modal-backdrop {

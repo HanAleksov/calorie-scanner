@@ -151,6 +151,12 @@
     <div class="card" id="entriesCard">
       <div id="entriesList"></div>
     </div>
+
+    <div class="card" id="gapRecommenderCard" hidden>
+      <h2 class="section-title" data-i18n="gap_recommender_title">Target Gap Recommender</h2>
+      <p class="explain-text" id="gapRecommenderExplain"></p>
+      <div id="gapRecommenderList"></div>
+    </div>
   </section>
 
   <!-- HISTORY -->
@@ -183,6 +189,15 @@
 
   <!-- PLAN -->
   <section class="tab-panel" id="tab-plan">
+    <div class="card analyst-feed-card" id="analystFeedCard" hidden>
+      <h2 class="section-title" data-i18n="analyst_feed_title">Analyst Feed</h2>
+      <div id="analystFeedLatest"></div>
+      <details class="manual-goals-details" id="analystFeedHistoryDetails">
+        <summary data-i18n="analyst_feed_history_label">+ Show recent history</summary>
+        <div id="analystFeedHistory"></div>
+      </details>
+    </div>
+
     <div class="card">
       <h2 class="section-title" data-i18n="profile_title">Your Profile</h2>
       <div class="unit-toggle">
@@ -421,6 +436,17 @@
     <div class="field hidden" id="settingsOldPinField"><label data-i18n="old_pin">Current PIN</label><input type="text" inputmode="numeric" maxlength="4" id="settingsOldPin" data-i18n-ph="pin_ph" placeholder="····"></div>
     <div class="field"><label data-i18n="new_pin_optional">New 4-digit PIN (leave blank to remove)</label><input type="text" inputmode="numeric" maxlength="4" id="settingsNewPin" data-i18n-ph="pin_ph" placeholder="····"></div>
     <button class="btn btn-secondary" id="settingsSavePinBtn" style="width:100%" data-i18n="save_pin">Save PIN</button>
+
+    <hr class="settings-divider">
+
+    <div class="settings-toggle-row">
+      <label class="toggle-switch">
+        <input type="checkbox" id="autoApplyToggle" checked>
+        <span class="toggle-slider"></span>
+      </label>
+      <span data-i18n="auto_apply_toggle_label">Auto-Apply Targets Automatically</span>
+    </div>
+    <p class="explain-text" data-i18n="auto_apply_toggle_desc" style="margin-top:-6px">When on, the Analyst engine can change your calorie/macro targets by itself after a new weigh-in. When off, it still evaluates and logs to the Analyst Feed, but never changes your targets without you applying it manually.</p>
 
     <hr class="settings-divider">
 

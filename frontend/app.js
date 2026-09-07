@@ -279,14 +279,31 @@ $("settingsBtn").addEventListener("click", openSettings);
 $("settingsCloseBtn").addEventListener("click", () => $("settingsModal").classList.add("hidden"));
 
 async function openSettings() {
-  const res = await apiFetch("/api/users/me");
-  const me = await res.json();
+  const [meRes, goalsRes] = await Promise.all([apiFetch("/api/users/me"), apiFetch("/api/goals")]);
+  const me = await meRes.json();
+  const goals = await goalsRes.json();
   $("settingsName").value = me.name;
   $("settingsOldPinField").classList.toggle("hidden", !me.has_pin);
   $("settingsOldPin").value = "";
   $("settingsNewPin").value = "";
+  $("autoApplyToggle").checked = !goals || goals.auto_apply_targets !== 0;
   $("settingsModal").classList.remove("hidden");
 }
+
+$("autoApplyToggle").addEventListener("change", async (e) => {
+  const enabled = e.target.checked;
+  const res = await apiFetch("/api/settings/auto-apply-targets", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!res.ok) {
+    e.target.checked = !enabled;
+    toast(t("something_wrong"));
+    return;
+  }
+  toast(enabled ? t("auto_apply_enabled_toast") : t("auto_apply_disabled_toast"));
+});
 
 $("settingsSaveNameBtn").addEventListener("click", async () => {
   const name = $("settingsName").value.trim();
@@ -363,7 +380,43 @@ async function loadToday() {
   renderTotals(data.totals, data.goals);
   renderEntries(data.entries);
   renderWater(data.water_ml, data.goals.water_ml);
+  renderGapRecommender(data.totals.calories, data.goals.calories);
   loadCachedTip();
+}
+
+// ---------- Target Gap Recommender (evening, gain-goal only) ----------
+// Calorie-dense, minimal-volume options for closing a big gap late in the day — hardgainer
+// framing only. Gated to goal_type "gain": telling a "lose"/"maintain" user to eat 600+ kcal
+// because they're "under target" would actively undermine their goal (see CLAUDE.md's
+// goal-aware visual language rule — this is the same principle applied to a recommendation,
+// not just styling).
+const GAP_RECOMMENDER_MIN_HOUR = 18;
+const GAP_RECOMMENDER_MIN_REMAINING_KCAL = 400;
+const GAP_MEAL_OPTIONS = [
+  { key: "gap_meal_liquid_bulk", kcal: 620, protein_g: 42 },
+  { key: "gap_meal_yogurt_bowl", kcal: 650, protein_g: 30 },
+  { key: "gap_meal_pb_toast", kcal: 550, protein_g: 18 },
+];
+
+function renderGapRecommender(loggedCalories, dailyGoal) {
+  const card = $("gapRecommenderCard");
+  const remaining = dailyGoal - loggedCalories;
+  const hour = new Date().getHours();
+  const isGainGoal = state.goalType === "gain";
+
+  if (!isGainGoal || hour < GAP_RECOMMENDER_MIN_HOUR || remaining < GAP_RECOMMENDER_MIN_REMAINING_KCAL) {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+  $("gapRecommenderExplain").textContent = t("gap_recommender_explain", { remaining: Math.round(remaining) });
+  $("gapRecommenderList").innerHTML = GAP_MEAL_OPTIONS.map(
+    (opt) => `
+      <div class="gap-meal-option">
+        <div class="gap-meal-name">${t(opt.key)}</div>
+        <div class="gap-meal-macros">${opt.kcal} kcal · ${opt.protein_g}g ${t("protein")}</div>
+      </div>`
+  ).join("");
 }
 
 function applyGoalAwareClass(el, value, goal) {
@@ -971,6 +1024,52 @@ async function loadPlanTab() {
   if (p.dietary_notes) $("dietaryNotes").value = p.dietary_notes;
   loadGoalsForm();
   loadSavedMealPlan();
+  loadAnalystFeed();
+}
+
+// ---------- Analyst Feed (autonomous auto-adjustment log) ----------
+function _formatLogTime(createdAt) {
+  const locale = currentLang() === "bg" ? "bg-BG" : undefined;
+  return new Date(createdAt.replace(" ", "T")).toLocaleString(locale, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+async function loadAnalystFeed() {
+  const res = await apiFetch("/api/analyst/logs?limit=20");
+  if (!res.ok) return;
+  const { logs } = await res.json();
+  const card = $("analystFeedCard");
+  if (!logs.length) {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+
+  const [latest, ...rest] = logs;
+  const changed = latest.new_calories !== latest.old_calories;
+  const deltaBadge = changed
+    ? `<span class="analyst-feed-delta ${latest.new_calories > latest.old_calories ? "up" : "down"}">${latest.old_calories} → ${latest.new_calories} kcal</span>`
+    : "";
+  $("analystFeedLatest").innerHTML = `
+    <div class="analyst-feed-entry">
+      <div class="analyst-feed-icon">${ICON.zap}</div>
+      <div class="analyst-feed-body">
+        <div class="analyst-feed-reason">${escapeHtml(latest.reason_text)}</div>
+        ${deltaBadge}
+        <div class="analyst-feed-meta">${_formatLogTime(latest.created_at)}</div>
+      </div>
+    </div>`;
+
+  $("analystFeedHistory").innerHTML = rest.length
+    ? rest
+        .map((log) => {
+          const rowChanged = log.new_calories !== log.old_calories;
+          const rowDelta = rowChanged ? ` — ${log.old_calories} → ${log.new_calories} kcal` : "";
+          return `<div class="analyst-feed-history-row">${_formatLogTime(log.created_at)}: ${escapeHtml(log.reason_text)}${rowDelta}</div>`;
+        })
+        .join("")
+    : `<div class="analyst-feed-history-row">${t("analyst_feed_no_history")}</div>`;
 }
 
 $("calcGoalsBtn").addEventListener("click", async () => {
@@ -1068,7 +1167,11 @@ $("calcAdaptiveTdeeBtn").addEventListener("click", async () => {
   }
 });
 
-const SUGGESTION_MESSAGE_KEY = { under_fueled: "suggestion_under_fueled", fat_spike: "suggestion_fat_spike" };
+const SUGGESTION_MESSAGE_KEY = {
+  under_fueled: "suggestion_under_fueled",
+  fat_spike: "suggestion_fat_spike",
+  on_track: "suggestion_on_track",
+};
 
 function renderAdaptiveTdee(data) {
   const el = $("adaptiveTdeeResult");
@@ -1085,12 +1188,16 @@ function renderAdaptiveTdee(data) {
     .map((s, i) => {
       const msgKey = SUGGESTION_MESSAGE_KEY[s.type];
       const message = t(msgKey, { delta: Math.abs(s.calorie_delta), weight_delta: s.weight_delta_kg, days: data.elapsed_days });
+      if (s.type === "on_track") {
+        // Nothing to apply — the "no change needed" case is informational only.
+        return `<div class="suggestion-card" data-idx="${i}"><p class="explain-text" style="margin:0">${message}</p></div>`;
+      }
       return `
         <div class="suggestion-card" data-idx="${i}">
           <p class="explain-text" style="margin:0 0 10px">${message}</p>
           <div class="modal-actions" style="margin-top:0">
             <button class="btn btn-secondary ignore-suggestion-btn" data-delta="${s.calorie_delta}">${t("ignore_suggestion_btn")}</button>
-            <button class="btn btn-primary apply-suggestion-btn" data-delta="${s.calorie_delta}">${t("apply_suggestion_btn")}</button>
+            <button class="btn btn-primary apply-suggestion-btn" data-delta="${s.calorie_delta}" data-prioritize-carbs="${!!s.prioritize_carbs}" data-protein-floor="${s.protein_floor_g || 0}">${t("apply_suggestion_btn")}</button>
           </div>
         </div>`;
     })
@@ -1137,18 +1244,31 @@ function renderAdaptiveTdee(data) {
     btn.addEventListener("click", async (ev) => {
       const card = ev.target.closest(".suggestion-card");
       const delta = Number(btn.dataset.delta);
+      const prioritizeCarbs = btn.dataset.prioritizeCarbs === "true";
+      const proteinFloor = Number(btn.dataset.proteinFloor) || 0;
       const goalsRes = await apiFetch("/api/goals");
       const goals = await goalsRes.json();
       const newCalories = goals.calories + delta;
-      const carbsG = Math.max(newCalories - goals.protein_g * 4 - goals.fat_g * 9, 0) / 4;
+
+      // Mirrors nutrition.apply_calorie_adjustment() on the backend: fat_spike suggestions
+      // hold protein at its floor and take the cut out of fat (floored at 40g) instead of
+      // carbs; every other suggestion keeps protein/fat fixed and lets carbs absorb the delta.
+      let proteinG = goals.protein_g;
+      let fatG = goals.fat_g;
+      if (prioritizeCarbs) {
+        proteinG = Math.max(proteinG, proteinFloor);
+        fatG = Math.max(fatG + delta / 9, 40);
+      }
+      const carbsG = Math.round(Math.max(newCalories - proteinG * 4 - fatG * 9, 0) / 4);
+
       await apiFetch("/api/goals", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          calories: newCalories,
-          protein_g: goals.protein_g,
-          carbs_g: Math.round(carbsG),
-          fat_g: goals.fat_g,
+          calories: Math.round(newCalories),
+          protein_g: Math.round(proteinG),
+          carbs_g: carbsG,
+          fat_g: Math.round(fatG),
         }),
       });
       toast(t("suggestion_applied_toast"));

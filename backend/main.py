@@ -2,7 +2,7 @@ import json
 import os
 import sys
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -297,6 +297,112 @@ def log_water(payload: dict, user_id: int = Depends(current_user_id)):
     return {"water_ml": total}
 
 
+# ---------- autonomous analyst engine ----------
+
+def evaluate_and_auto_adjust_user(conn, user_id: int) -> None:
+    """Runs synchronously after every new weigh-in is stored. Computes the same
+    adaptive-TDEE/suggestion engine the manual "Recalculate From My Data" button uses and,
+    unless there's insufficient data, a cooldown is active, or the user has Auto-Apply
+    Targets turned off, commits the result directly to goals — always leaving a row in
+    analyst_logs explaining what it saw and what (if anything) it did. Never raises: a bug
+    in this best-effort background analysis must not break the weigh-in request that
+    triggered it."""
+    try:
+        weight_entries = db.get_weight_log(conn, user_id, limit=60)
+        end = tzutil.today_local()
+        start = end - timedelta(days=nutrition.ADAPTIVE_LOOKBACK_DAYS - 1)
+        entries = db.get_entries_between(conn, user_id, start.isoformat(), end.isoformat())
+        goals = db.get_goals(conn, user_id)
+        if not goals:
+            return
+
+        daily_calories = _daily_calorie_totals(entries)
+        result = nutrition.calculate_adaptive_tdee(daily_calories, weight_entries)
+        if result["insufficient_data"]:
+            return  # not enough data to say anything meaningful — do nothing, not even a log
+
+        suggestions = result["suggestions"]
+        total_delta = round(sum(s["calorie_delta"] for s in suggestions))
+        prioritize_carbs = any(s["type"] == "fat_spike" for s in suggestions)
+        now = tzutil.now_local_naive().isoformat(timespec="seconds")
+
+        reason_parts = []
+        for s in suggestions:
+            if s["type"] == "under_fueled":
+                reason_parts.append(
+                    f"Weight velocity {s['weight_velocity_kg_week']:+.2f} kg/week is below the "
+                    f"{nutrition.ADJUSTMENT_UNDER_FUELED_MIN_VELOCITY_KG_WEEK} kg/week floor "
+                    f"(suggests +{nutrition.ADJUSTMENT_UNDER_FUELED_DELTA_KCAL} kcal)."
+                )
+            elif s["type"] == "fat_spike":
+                reason_parts.append(
+                    f"Fat mass gained {s['fat_mass_delta_kg']:.2f}kg of {s['weight_delta_kg']:.2f}kg total "
+                    f"(over the {nutrition.ADJUSTMENT_FAT_SPIKE_RATIO*100:.0f}% threshold) — suggests trimming "
+                    f"{abs(nutrition.ADJUSTMENT_FAT_SPIKE_DELTA_KCAL)} kcal from fat, protein held at a "
+                    f"{nutrition.ADJUSTMENT_PROTEIN_FLOOR_G}g floor."
+                )
+            elif s["type"] == "on_track":
+                reason_parts.append(
+                    f"On track at {s['weight_velocity_kg_week']:+.2f} kg/week, within the "
+                    f"{nutrition.ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK}-{nutrition.ADJUSTMENT_SWEET_SPOT_MAX_KG_WEEK} kg/week target."
+                )
+        reason_text = " ".join(reason_parts) if reason_parts else "Evaluated — no adjustment rule fired."
+
+        if abs(total_delta) < nutrition.AUTO_ADJUST_MIN_COMMIT_KCAL:
+            db.add_analyst_log(
+                conn, user_id, created_at=now, old_calories=goals["calories"], new_calories=goals["calories"],
+                reason_text=f"{reason_text} Net change ({total_delta:+d} kcal) is below the "
+                            f"{nutrition.AUTO_ADJUST_MIN_COMMIT_KCAL} kcal commit threshold — no change made.",
+            )
+            return
+
+        last_commit = db.get_last_committed_adjustment(conn, user_id)
+        if last_commit:
+            days_since = tzutil.now_local_naive() - datetime.fromisoformat(last_commit["created_at"])
+            if days_since < timedelta(days=nutrition.AUTO_ADJUST_COOLDOWN_DAYS):
+                db.add_analyst_log(
+                    conn, user_id, created_at=now, old_calories=goals["calories"], new_calories=goals["calories"],
+                    reason_text=f"{reason_text} Would have changed target by {total_delta:+d} kcal, but the last "
+                                f"auto-adjustment was less than {nutrition.AUTO_ADJUST_COOLDOWN_DAYS} days ago — "
+                                "skipped (cooldown).",
+                )
+                return
+
+        if not goals.get("auto_apply_targets", 1):
+            db.add_analyst_log(
+                conn, user_id, created_at=now, old_calories=goals["calories"], new_calories=goals["calories"],
+                reason_text=f"{reason_text} Would have changed target by {total_delta:+d} kcal, but Auto-Apply "
+                            "Targets is turned off in Settings — no change made.",
+            )
+            return
+
+        updated = nutrition.apply_calorie_adjustment(goals, total_delta, prioritize_carbs=prioritize_carbs)
+        old_calories = goals["calories"]
+        db.set_goals(conn, user_id, calories=updated["calories"], protein_g=updated["protein_g"],
+                      carbs_g=updated["carbs_g"], fat_g=updated["fat_g"])
+        db.add_analyst_log(
+            conn, user_id, created_at=now, old_calories=old_calories, new_calories=updated["calories"],
+            reason_text=f"{reason_text} Target changed from {old_calories} to {updated['calories']} kcal.",
+        )
+    except Exception:
+        pass
+
+
+@app.get("/api/analyst/logs")
+def get_analyst_logs(limit: int = 20, user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        return {"logs": db.get_analyst_logs(conn, user_id, limit)}
+
+
+@app.put("/api/settings/auto-apply-targets")
+def set_auto_apply_targets(payload: dict, user_id: int = Depends(current_user_id)):
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        raise HTTPException(400, "enabled must be a boolean")
+    with db.get_conn() as conn:
+        return db.set_auto_apply_targets(conn, user_id, enabled)
+
+
 # ---------- weight ----------
 
 @app.post("/api/weight")
@@ -321,6 +427,7 @@ def log_weight(payload: dict, user_id: int = Depends(current_user_id)):
             conn, user_id, weight_kg, tzutil.now_local_naive().isoformat(timespec="seconds"),
             **optional_fields,
         )
+        evaluate_and_auto_adjust_user(conn, user_id)
     return entry
 
 

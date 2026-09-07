@@ -80,11 +80,23 @@ EWMA_ALPHA = 0.2                     # ~9-day half-life smoothing of daily weigh
 ADAPTIVE_SURPLUS_BUFFER_KCAL = 400
 
 # ---------- Scale-based adjustment suggestions ----------
-ADJUSTMENT_UNDER_FUELED_MIN_GAIN_KG = 0.5
-ADJUSTMENT_UNDER_FUELED_DELTA_KCAL = 200
-ADJUSTMENT_FAT_SPIKE_RATIO = 0.7
+# Velocity thresholds are specified in kg/week (matches how a hardgainer target is usually
+# talked about) and compared against weight_velocity_kg_week, which calculate_adaptive_tdee
+# already derives from the 14-day window — no separate unit conversion needed at the call site.
+ADJUSTMENT_UNDER_FUELED_MIN_VELOCITY_KG_WEEK = 0.2
+ADJUSTMENT_UNDER_FUELED_DELTA_KCAL = 150
+ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK = 0.3
+ADJUSTMENT_SWEET_SPOT_MAX_KG_WEEK = 0.5
+ADJUSTMENT_FAT_SPIKE_RATIO = 0.65
 ADJUSTMENT_FAT_SPIKE_DELTA_KCAL = -100
 ADJUSTMENT_MIN_FAT_MASS_READINGS = 2
+ADJUSTMENT_PROTEIN_FLOOR_G = 135  # held as a minimum (never lowered) when trimming for a fat spike
+ADJUSTMENT_FAT_FLOOR_G = 40       # sane floor so an automated fat-priority cut can't zero out fat
+
+# ---------- Autonomous auto-adjustment engine ----------
+AUTO_ADJUST_MIN_COMMIT_KCAL = 50   # a computed change smaller than this is noise, not a decision
+AUTO_ADJUST_COOLDOWN_DAYS = 7      # at most one auto-committed change per rolling week, even if
+                                    # weight is logged/scanned more often than that
 
 
 def calculate_water_ml(weight_kg: float, activity_level: str, is_summer: bool) -> int:
@@ -140,17 +152,28 @@ def ewma_weight_trend(weight_entries: list, as_of: date | None = None,
 
 
 def _evaluate_adjustment_rules(weight_delta_kg: float, weight_entries: list,
-                                effective_start: date, as_of: date) -> list:
+                                effective_start: date, as_of: date, elapsed_days: int) -> list:
     """Scale-driven "should we nudge the target" checks, evaluated over the same window
     calculate_adaptive_tdee already computed. Never raises on missing/sparse data — a
     rule that can't be evaluated (e.g. no fat_mass_kg logged) simply doesn't fire."""
     suggestions = []
+    weight_velocity_kg_week = (weight_delta_kg / elapsed_days) * 7 if elapsed_days else 0.0
 
-    if weight_delta_kg < ADJUSTMENT_UNDER_FUELED_MIN_GAIN_KG:
+    if weight_velocity_kg_week < ADJUSTMENT_UNDER_FUELED_MIN_VELOCITY_KG_WEEK:
         suggestions.append({
             "type": "under_fueled",
             "calorie_delta": ADJUSTMENT_UNDER_FUELED_DELTA_KCAL,
             "weight_delta_kg": round(weight_delta_kg, 2),
+            "weight_velocity_kg_week": round(weight_velocity_kg_week, 3),
+        })
+    elif ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK <= weight_velocity_kg_week <= ADJUSTMENT_SWEET_SPOT_MAX_KG_WEEK:
+        # In the target range — an explicit "no change" signal rather than silence, so the
+        # caller (and the Analyst Feed) can say *why* nothing moved instead of showing nothing.
+        suggestions.append({
+            "type": "on_track",
+            "calorie_delta": 0,
+            "weight_delta_kg": round(weight_delta_kg, 2),
+            "weight_velocity_kg_week": round(weight_velocity_kg_week, 3),
         })
 
     # Bucket ALL fat_mass_kg readings (not just those inside the scored window) so the
@@ -182,9 +205,37 @@ def _evaluate_adjustment_rules(weight_delta_kg: float, weight_entries: list,
                     "calorie_delta": ADJUSTMENT_FAT_SPIKE_DELTA_KCAL,
                     "fat_mass_delta_kg": round(fat_mass_delta_kg, 2),
                     "weight_delta_kg": round(weight_delta_kg, 2),
+                    "protein_floor_g": ADJUSTMENT_PROTEIN_FLOOR_G,
+                    "prioritize_carbs": True,  # trim comes out of fat grams, carbs held steady
                 })
 
     return suggestions
+
+
+def apply_calorie_adjustment(goals: dict, calorie_delta: int, prioritize_carbs: bool = False) -> dict:
+    """Pure macro redistribution for a calorie_delta coming from an adjustment suggestion.
+    Default behavior (prioritize_carbs=False) matches the existing manual "Apply" flow:
+    protein_g and fat_g stay fixed, carbs_g absorbs the whole delta. prioritize_carbs=True
+    (the fat_spike case) instead holds protein at ADJUSTMENT_PROTEIN_FLOOR_G minimum and
+    carbs_g fixed, taking the delta out of fat_g — floored so an automated cut can't zero
+    out fat entirely; any remainder past that floor spills back onto carbs."""
+    protein_g = goals["protein_g"]
+    carbs_g = goals["carbs_g"]
+    fat_g = goals["fat_g"]
+    new_calories = round(goals["calories"] + calorie_delta)
+
+    if prioritize_carbs:
+        protein_g = max(protein_g, ADJUSTMENT_PROTEIN_FLOOR_G)
+        fat_g = max(fat_g + calorie_delta / 9, ADJUSTMENT_FAT_FLOOR_G)
+
+    carbs_g = round(max(new_calories - protein_g * 4 - fat_g * 9, 0) / 4)
+
+    return {
+        "calories": new_calories,
+        "protein_g": round(protein_g),
+        "carbs_g": carbs_g,
+        "fat_g": round(fat_g),
+    }
 
 
 def calculate_adaptive_tdee(daily_calories: list, weight_entries: list,
@@ -256,7 +307,7 @@ def calculate_adaptive_tdee(daily_calories: list, weight_entries: list,
         "window_start": effective_start.isoformat(),
         "window_end": as_of.isoformat(),
         "method": "EWMA-smoothed weight trend vs. logged intake over the trailing window",
-        "suggestions": _evaluate_adjustment_rules(weight_delta_kg, weight_entries, effective_start, as_of),
+        "suggestions": _evaluate_adjustment_rules(weight_delta_kg, weight_entries, effective_start, as_of, elapsed_days),
     }
 
 

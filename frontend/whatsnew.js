@@ -1,6 +1,19 @@
-const CURRENT_APP_VERSION = 7;
+const CURRENT_APP_VERSION = 8;
 
 const WHATS_NEW = [
+  {
+    version: 8,
+    en: [
+      "🤖 Analyst engine — after each weigh-in, the app now automatically checks your progress and can adjust your calorie target for you (see the new Analyst Feed on the Plan tab for what changed and why).",
+      "⚙️ New Settings toggle — turn off \"Auto-Apply Targets Automatically\" any time to go back to reviewing suggestions yourself before they change anything.",
+      "🌙 Evening gap recommender — if you're still well under your calorie target late in the day, the Today tab now suggests a few dense, low-volume options to help close it.",
+    ],
+    bg: [
+      "🤖 Анализиращ механизъм — след всяко измерване на тегло приложението вече проверява автоматично напредъка ти и може само да коригира калорийната ти цел (виж новия раздел „Анализи“ в План за какво и защо е променено).",
+      "⚙️ Нов превключвател в Настройки — изключи „Автоматично прилагане на целите“ по всяко време, за да преглеждаш предложенията сам, преди да променят нещо.",
+      "🌙 Вечерни предложения за запълване на целта — ако все още си доста под калорийната си цел късно през деня, раздел Днес вече предлага няколко калорийно плътни опции с малък обем.",
+    ],
+  },
   {
     version: 7,
     en: [

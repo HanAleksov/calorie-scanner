@@ -56,8 +56,12 @@ def _migrate(conn) -> None:
         if "energy_score" not in entry_cols:
             conn.execute("ALTER TABLE entries ADD COLUMN energy_score REAL")
 
-    if _table_exists(conn, "goals") and "water_ml" not in _table_columns(conn, "goals"):
-        conn.execute("ALTER TABLE goals ADD COLUMN water_ml INTEGER NOT NULL DEFAULT 2000")
+    if _table_exists(conn, "goals"):
+        goals_cols = _table_columns(conn, "goals")
+        if "water_ml" not in goals_cols:
+            conn.execute("ALTER TABLE goals ADD COLUMN water_ml INTEGER NOT NULL DEFAULT 2000")
+        if "auto_apply_targets" not in goals_cols:
+            conn.execute("ALTER TABLE goals ADD COLUMN auto_apply_targets INTEGER NOT NULL DEFAULT 1")
 
     if _table_exists(conn, "weight_log"):
         wl_cols = _table_columns(conn, "weight_log")
@@ -180,6 +184,7 @@ def delete_user(conn, user_id: int) -> None:
     conn.execute("DELETE FROM daily_tip WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM weight_log WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM favorites WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM analyst_logs WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
@@ -432,3 +437,45 @@ def list_favorites(conn, user_id: int) -> list:
 
 def delete_favorite(conn, user_id: int, favorite_id: int) -> None:
     conn.execute("DELETE FROM favorites WHERE id = ? AND user_id = ?", (favorite_id, user_id))
+
+
+# ---------- settings ----------
+
+def set_auto_apply_targets(conn, user_id: int, enabled: bool) -> dict:
+    conn.execute("UPDATE goals SET auto_apply_targets = ? WHERE user_id = ?", (int(enabled), user_id))
+    return get_goals(conn, user_id)
+
+
+# ---------- analyst log (autonomous auto-adjustment engine) ----------
+
+def add_analyst_log(conn, user_id: int, *, created_at: str, old_calories: int | None,
+                     new_calories: int | None, reason_text: str) -> dict:
+    cur = conn.execute(
+        """INSERT INTO analyst_logs (user_id, created_at, old_calories, new_calories, reason_text)
+           VALUES (?, ?, ?, ?, ?)""",
+        (user_id, created_at, old_calories, new_calories, reason_text),
+    )
+    row = conn.execute("SELECT * FROM analyst_logs WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return dict(row)
+
+
+def get_analyst_logs(conn, user_id: int, limit: int = 20) -> list:
+    rows = conn.execute(
+        "SELECT * FROM analyst_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (user_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_last_committed_adjustment(conn, user_id: int) -> dict | None:
+    """Most recent analyst_logs row that actually changed calories — used for the
+    auto-adjustment cooldown. Rows where old_calories == new_calories were evaluations
+    that didn't commit anything and don't count toward the cooldown."""
+    row = conn.execute(
+        """SELECT * FROM analyst_logs
+           WHERE user_id = ? AND old_calories IS NOT NULL AND new_calories IS NOT NULL
+                 AND old_calories != new_calories
+           ORDER BY created_at DESC LIMIT 1""",
+        (user_id,),
+    ).fetchone()
+    return dict(row) if row else None

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS goals (
     protein_g REAL NOT NULL DEFAULT 120,
     carbs_g REAL NOT NULL DEFAULT 220,
     fat_g REAL NOT NULL DEFAULT 70,
-    water_ml INTEGER NOT NULL DEFAULT 2000
+    water_ml INTEGER NOT NULL DEFAULT 2000,
+    auto_apply_targets INTEGER NOT NULL DEFAULT 1  -- autonomous analyst engine may write goals directly
 );
 
 CREATE TABLE IF NOT EXISTS water_log (
@@ -87,4 +88,13 @@ CREATE TABLE IF NOT EXISTS favorites (
     fat_g REAL,
     energy_score REAL,
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS analyst_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    old_calories INTEGER,   -- NULL-equal-to-new_calories rows are informational (no-op) entries
+    new_calories INTEGER,
+    reason_text TEXT NOT NULL
 );
