@@ -867,6 +867,55 @@ $("logWeightBtn").addEventListener("click", async () => {
   loadWeightLog();
 });
 
+// ---------- Scale screenshot scan ----------
+$("scanScaleBtn").addEventListener("click", () => $("scaleScanInput").click());
+
+$("scaleScanInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+
+  const btn = $("scanScaleBtn");
+  const originalHtml = btn.innerHTML;
+  btn.innerHTML = `<span class="spinner"></span> ${t("scale_scanning")}`;
+  btn.disabled = true;
+  $("scaleScanInfo").hidden = true;
+
+  const formData = new FormData();
+  formData.append("image", file);
+
+  try {
+    const res = await apiFetch("/api/weight/scan", { method: "POST", body: formData });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || t("something_wrong"));
+    }
+    const data = await res.json();
+    $("weightLogInput").value = data.weight_kg;
+    if (data.fat_mass_kg != null) $("scaleFatMass").value = data.fat_mass_kg;
+    if (data.skeletal_muscle_kg != null) $("scaleMuscleMass").value = data.skeletal_muscle_kg;
+    if (data.body_water_pct != null) $("scaleWaterPct").value = data.body_water_pct;
+    if (data.fat_mass_kg != null || data.skeletal_muscle_kg != null || data.body_water_pct != null) {
+      $("scaleCompositionDetails").open = true;
+    }
+
+    const extras = [];
+    if (data.body_fat_pct != null) extras.push(`${t("scale_body_fat_pct_label")}: ${data.body_fat_pct}%`);
+    if (data.bmr_kcal != null) extras.push(`${t("scale_bmr_kcal_label")}: ${data.bmr_kcal}`);
+    if (data.protein_pct != null) extras.push(`${t("scale_protein_pct_label")}: ${data.protein_pct}%`);
+    if (extras.length) {
+      $("scaleScanInfo").textContent = extras.join(" · ");
+      $("scaleScanInfo").hidden = false;
+    }
+    toast(t("scale_scan_success"));
+  } catch (err) {
+    toast(err.message || t("something_wrong"));
+  } finally {
+    btn.innerHTML = originalHtml;
+    btn.disabled = false;
+  }
+});
+
 // ================== PLAN TAB ==================
 document.querySelectorAll(".unit-btn").forEach((btn) => {
   btn.addEventListener("click", () => {

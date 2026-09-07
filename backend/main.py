@@ -337,6 +337,22 @@ def delete_weight_entry(entry_id: int, user_id: int = Depends(current_user_id)):
     return {"ok": True}
 
 
+@app.post("/api/weight/scan")
+async def scan_weight_screenshot(
+    image: UploadFile = File(...),
+    user_id: int = Depends(current_user_id),
+):
+    if image.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(400, "image must be JPEG, PNG, or WebP")
+    image_bytes = await image.read()
+    if len(image_bytes) > 10 * 1024 * 1024:
+        raise HTTPException(400, "image too large (max 10MB)")
+    try:
+        return vision.parse_scale_screenshot(image_bytes, image.content_type)
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+
 @app.get("/api/history")
 def history(days: int = 14, user_id: int = Depends(current_user_id)):
     end = tzutil.today_local()

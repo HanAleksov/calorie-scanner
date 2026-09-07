@@ -202,3 +202,81 @@ def analyze_meal_photo(images: list[tuple[bytes, str]], lang: str = "en", user_n
         return json.loads(text)
     except json.JSONDecodeError as e:
         raise RuntimeError("The analysis response wasn't valid — try again.") from e
+
+
+SCALE_SYSTEM_PROMPT = """You are reading a screenshot from a smart scale / bioelectrical impedance
+(BIA) app (e.g. Huawei Health, Honor Health, or similar). Extract the numeric health metrics shown
+on screen. Only report a metric if it is actually visible in the screenshot — if a field isn't
+shown, return null for it rather than guessing or estimating. weight_kg is the one metric that must
+always be present; every other field is optional and should be null when absent. Convert any value
+shown in a different unit (e.g. lb, %) to the schema's stated unit. Values only — no units or extra
+text inside them."""
+
+SCALE_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "weight_kg": {"type": "number"},
+        "body_fat_pct": {"type": ["number", "null"]},
+        "fat_mass_kg": {"type": ["number", "null"]},
+        "skeletal_muscle_kg": {"type": ["number", "null"]},
+        "bmr_kcal": {"type": ["integer", "null"]},
+        "body_water_pct": {"type": ["number", "null"]},
+        "protein_pct": {"type": ["number", "null"]},
+    },
+    "required": [
+        "weight_kg",
+        "body_fat_pct",
+        "fat_mass_kg",
+        "skeletal_muscle_kg",
+        "bmr_kcal",
+        "body_water_pct",
+        "protein_pct",
+    ],
+    "additionalProperties": False,
+}
+
+
+def parse_scale_screenshot(image_bytes: bytes, media_type: str) -> dict:
+    """Extract BIA smart-scale metrics from a screenshot. Only weight_kg is guaranteed to be
+    non-null — every other field comes back null when that metric isn't shown on screen, never
+    fabricated. Not cached/multi-language like analyze_meal_photo — this prompt is small and
+    single-purpose, and the values it returns are numbers, not language-dependent text."""
+    client = _client()
+    opt_bytes, opt_media_type = _optimize_image(image_bytes, media_type)
+
+    try:
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=512,
+            system=[{"type": "text", "text": SCALE_SYSTEM_PROMPT}],
+            output_config={"format": {"type": "json_schema", "schema": SCALE_RESPONSE_SCHEMA}},
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": opt_media_type,
+                                "data": base64.standard_b64encode(opt_bytes).decode("utf-8"),
+                            },
+                        },
+                        {"type": "text", "text": "Extract the scale metrics from this screenshot."},
+                    ],
+                }
+            ],
+        )
+    except anthropic.APIError as e:
+        raise RuntimeError("Couldn't read that screenshot — try a clearer photo.") from e
+
+    if response.stop_reason == "refusal":
+        raise RuntimeError("The model declined to read this screenshot.")
+    if response.stop_reason == "max_tokens":
+        raise RuntimeError("The scan was cut off before it finished. Try again.")
+
+    text = next(block.text for block in response.content if block.type == "text")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise RuntimeError("The scan response wasn't valid — try again.") from e
