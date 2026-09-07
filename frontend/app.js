@@ -5,6 +5,25 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 
+// Inline SVG icons reused across dynamically-rendered templates below (entries, favorites,
+// meal plan, user list) — kept as raw markup strings since template literals can't reference
+// <svg> elements directly. Static markup in index.html has its own copies inline.
+const ICON = {
+  lock: '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>',
+  edit: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path></svg>',
+  star: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
+  starLg: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
+  trash: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
+  zap: '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>',
+  note: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>',
+  x: '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+  sunrise: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 18a5 5 0 0 0-10 0"></path><line x1="12" y1="2" x2="12" y2="9"></line><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"></line><line x1="1" y1="18" x2="3" y2="18"></line><line x1="21" y1="18" x2="23" y2="18"></line><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"></line><line x1="23" y1="22" x2="1" y2="22"></line><polyline points="8 6 12 2 16 6"></polyline></svg>',
+  sun: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>',
+  moon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>',
+  package: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4L7.5 4.21"></path><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>',
+  plate: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="3"></circle></svg>',
+};
+
 function toast(msg) {
   const el = document.createElement("div");
   el.className = "toast";
@@ -116,7 +135,7 @@ async function renderUserList() {
   list.innerHTML = users
     .map(
       (u) => `<button class="pick-user-btn" data-id="${u.id}" data-haspin="${u.has_pin}">
-        <span>${escapeHtml(u.name)}</span>${u.has_pin ? '<span class="pin-lock">🔒</span>' : ""}
+        <span>${escapeHtml(u.name)}</span>${u.has_pin ? `<span class="pin-lock">${ICON.lock}</span>` : ""}
       </button>`
     )
     .join("");
@@ -454,12 +473,12 @@ function renderEntries(entries) {
     .map((e) => {
       const thumb = e.image_path
         ? `<img class="thumb" src="/uploads/${e.image_path}" alt="">`
-        : `<div class="thumb-placeholder">✏️</div>`;
+        : `<div class="thumb-placeholder">${ICON.edit}</div>`;
       const itemNames = e.items.map((i) => i.name).join(", ");
       const lowConf = e.confidence === "low" ? `<span class="badge low-confidence">${t("low_confidence")}</span>` : "";
-      const energyBadge = e.energy_score != null ? `<span class="badge energy-badge">⚡${e.energy_score}/5</span>` : "";
+      const energyBadge = e.energy_score != null ? `<span class="badge energy-badge">${ICON.zap}${e.energy_score}/5</span>` : "";
       const time = e.created_at.slice(11, 16);
-      const noteLine = e.notes ? `<div class="entry-note">📝 ${escapeHtml(e.notes)}</div>` : "";
+      const noteLine = e.notes ? `<div class="entry-note">${ICON.note} ${escapeHtml(e.notes)}</div>` : "";
       return `
         <div class="entry" data-id="${e.id}">
           ${thumb}
@@ -470,9 +489,9 @@ function renderEntries(entries) {
             ${noteLine}
           </div>
           <div class="entry-actions">
-            <button class="favorite-btn" title="${t("save_favorite")}">☆</button>
-            <button class="edit-btn" title="${t("edit")}">✎</button>
-            <button class="delete-btn" title="${t("delete")}">🗑</button>
+            <button class="favorite-btn" title="${t("save_favorite")}">${ICON.star}</button>
+            <button class="edit-btn" title="${t("edit")}">${ICON.edit}</button>
+            <button class="delete-btn" title="${t("delete")}">${ICON.trash}</button>
           </div>
         </div>`;
     })
@@ -523,7 +542,7 @@ async function renderFavorites() {
     .map(
       (f) => `
       <div class="entry" data-id="${f.id}">
-        <div class="thumb-placeholder">⭐</div>
+        <div class="thumb-placeholder">${ICON.starLg}</div>
         <div class="entry-body">
           <div class="entry-title">${f.total_calories} kcal <span class="badge">${t(MEAL_LABEL_KEY[f.meal_type] || "meal_snack")}</span></div>
           <div class="entry-items">${escapeHtml(f.name)}</div>
@@ -531,7 +550,7 @@ async function renderFavorites() {
         </div>
         <div class="entry-actions">
           <button class="log-favorite-btn btn btn-primary" style="padding:8px 12px;font-size:12px">${t("log_this_meal_btn")}</button>
-          <button class="delete-favorite-btn" title="${t("delete")}">🗑</button>
+          <button class="delete-favorite-btn" title="${t("delete")}">${ICON.trash}</button>
         </div>
       </div>`
     )
@@ -670,7 +689,7 @@ function renderPhotoPreview() {
       (file, i) => `
       <div class="photo-preview-thumb">
         <img src="${URL.createObjectURL(file)}" alt="">
-        <button data-idx="${i}" title="${t("remove_photo")}">✕</button>
+        <button data-idx="${i}" title="${t("remove_photo")}">${ICON.x}</button>
       </div>`
     )
     .join("");
@@ -823,7 +842,7 @@ async function loadWeightLog() {
             <div class="date">${label}</div>
             <div class="kg">${entry.weight_kg}kg</div>
             ${deltaHtml}
-            <button class="delete-weight-btn" title="${t("delete")}">🗑</button>
+            <button class="delete-weight-btn" title="${t("delete")}">${ICON.trash}</button>
           </div>
           ${compositionHtml}
         </div>`;
@@ -1143,13 +1162,13 @@ function renderAdaptiveTdee(data) {
 // ---------- AI meal plan ----------
 function renderMealPlan(plan) {
   state.lastPlan = plan;
-  const mealIcons = { breakfast: "🌅", lunch: "☀️", dinner: "🌙", snack: "🍎" };
+  const mealIcons = { breakfast: ICON.sunrise, lunch: ICON.sun, dinner: ICON.moon, snack: ICON.package };
   const mealsHtml = plan.meals
     .map(
       (m, i) => `
       <div class="meal-card">
         <div class="meal-header">
-          <span class="meal-name">${mealIcons[m.meal_type] || "🍽"} ${escapeHtml(m.name)}</span>
+          <span class="meal-name">${mealIcons[m.meal_type] || ICON.plate} ${escapeHtml(m.name)}</span>
           <span class="meal-kcal">${m.calories} kcal</span>
         </div>
         <div class="meal-desc">${escapeHtml(m.description)}</div>

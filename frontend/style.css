@@ -151,6 +151,9 @@ header .actions { display: flex; gap: 8px; }
   cursor: pointer;
   color: var(--text);
   transition: transform 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .icon-btn:active { transform: scale(0.92); }
 
@@ -285,9 +288,9 @@ textarea { resize: vertical; }
 :root[data-theme="dark"] .badge.low-confidence { background: #4a3510; color: #fbbf24; }
 .entry-items { font-size: 12px; color: var(--text-dim); margin: 3px 0; line-height: 1.4; }
 .entry-macros { font-size: 12px; color: var(--text-dim); }
-.entry-note { font-size: 12px; color: var(--text-dim); font-style: italic; margin-top: 3px; }
+.entry-note { font-size: 12px; color: var(--text-dim); font-style: italic; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
 .entry-actions { display: flex; gap: 4px; align-items: flex-start; }
-.entry-actions button { background: none; border: none; font-size: 15px; cursor: pointer; color: var(--text-dim); padding: 5px; border-radius: 8px; }
+.entry-actions button { background: none; border: none; font-size: 15px; cursor: pointer; color: var(--text-dim); padding: 5px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
 .entry-actions button:active { background: var(--surface-2); }
 .entry-actions .log-favorite-btn { background: var(--accent); color: #fff; font-weight: 700; white-space: nowrap; }
 .entry-actions .log-favorite-btn:active { background: var(--accent-dark); }
@@ -347,7 +350,7 @@ nav.tabbar button.active { color: var(--accent); font-weight: 600; background: v
 .weight-row .delta { font-size: 12px; font-weight: 600; }
 .weight-row .delta.good { color: var(--protein); }
 .weight-row .delta.neutral { color: var(--text-dim); }
-.weight-row .delete-weight-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 4px; }
+.weight-row .delete-weight-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 4px; display: inline-flex; align-items: center; justify-content: center; }
 .weight-row-composition { font-size: 11px; color: var(--text-dim); padding-left: 76px; }
 
 /* Plan tab */
@@ -358,6 +361,7 @@ nav.tabbar button.active { color: var(--accent); font-weight: 600; background: v
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; }
 .scale-scan-info { font-size: 12px; color: var(--text-dim); margin: 8px 0; line-height: 1.4; }
+.icon-inline { vertical-align: -2px; flex-shrink: 0; }
 .field { margin-bottom: 12px; }
 .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 5px; font-weight: 500; }
 
@@ -437,7 +441,7 @@ nav.tabbar button.active { color: var(--accent); font-weight: 600; background: v
 .whats-new-version li { font-size: 13px; line-height: 1.6; margin-bottom: 6px; }
 
 /* Entry energy badge */
-.badge.energy-badge { background: var(--surface); border: 1px solid var(--border); }
+.badge.energy-badge { background: var(--surface); border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 3px; }
 
 /* Meal plan cards */
 .plan-day-summary { display: flex; gap: 8px; margin: 14px 0; }
@@ -452,7 +456,7 @@ nav.tabbar button.active { color: var(--accent); font-weight: 600; background: v
   margin-top: 10px; background: var(--surface-2);
 }
 .meal-card .meal-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.meal-card .meal-name { font-weight: 700; font-size: 14px; }
+.meal-card .meal-name { font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; gap: 5px; }
 .meal-card .meal-kcal { font-size: 13px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
 .meal-card .meal-desc { font-size: 12.5px; color: var(--text-dim); margin: 5px 0; line-height: 1.5; }
 .meal-card .meal-rationale { font-size: 11.5px; color: var(--text-dim); font-style: italic; margin-top: 6px; }

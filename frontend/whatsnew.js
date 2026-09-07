@@ -5,11 +5,11 @@ const WHATS_NEW = [
     version: 7,
     en: [
       "📸 Scan your scale screenshot — snap or pick a photo of your Huawei/Honor Health scale reading and AI fills in your weight and body composition for you.",
-      "🧭 Refreshed nav icons — the bottom tab bar now uses crisp line icons instead of emoji.",
+      "🧭 Refreshed icons — emoji throughout the app (nav bar, buttons, entry actions) are now crisp line icons.",
     ],
     bg: [
       "📸 Сканирай екран от везната — снимай или избери екранна снимка от Huawei/Honor Health и AI попълва теглото и телесния състав вместо теб.",
-      "🧭 Обновени икони — долното меню вече използва изчистени линейни икони вместо емоджита.",
+      "🧭 Обновени икони — емоджитата в цялото приложение (меню, бутони, действия) вече са изчистени линейни икони.",
     ],
   },
   {

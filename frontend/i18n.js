@@ -107,7 +107,7 @@ const TRANSLATIONS = {
     name_required: "Enter a name",
     pin_must_be_4_digits: "PIN must be 4 digits",
 
-    welcome_title: "Welcome 👋",
+    welcome_title: "Welcome",
     welcome_body:
       "Hey, I'm Aleks — I built this app myself to track meals with a photo instead of typing everything in by hand. " +
       "It's brand new and still rough around the edges, so if anything breaks, looks off, or you think of something " +
@@ -198,7 +198,7 @@ const TRANSLATIONS = {
     save_favorite: "Save as favorite",
     favorite_saved_toast: "Saved to favorites",
     no_favorites_line1: "No favorites yet.",
-    no_favorites_line2: "Tap the ☆ on any meal to save it here.",
+    no_favorites_line2: "Tap the star on any meal to save it here.",
     logged_from_favorite_toast: "Logged!",
     delete_favorite_confirm: "Remove this favorite?",
 
@@ -327,7 +327,7 @@ const TRANSLATIONS = {
     name_required: "Въведи име",
     pin_must_be_4_digits: "ПИН-ът трябва да е 4 цифри",
 
-    welcome_title: "Добре дошъл 👋",
+    welcome_title: "Добре дошъл",
     welcome_body:
       "Здравей, аз съм Алекс — сам направих това приложение, за да следя храненията си със снимка, " +
       "вместо да въвеждам всичко ръчно. Съвсем ново е и има недомислени неща, така че ако нещо се счупи, " +
@@ -419,7 +419,7 @@ const TRANSLATIONS = {
     save_favorite: "Запази като любимо",
     favorite_saved_toast: "Запазено в любими",
     no_favorites_line1: "Все още няма любими.",
-    no_favorites_line2: "Докосни ☆ на кое да е хранене, за да го запазиш тук.",
+    no_favorites_line2: "Докосни звездата на кое да е хранене, за да го запазиш тук.",
     logged_from_favorite_toast: "Записано!",
     delete_favorite_confirm: "Да премахна ли това любимо?",
 
