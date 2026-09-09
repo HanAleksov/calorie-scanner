@@ -72,12 +72,22 @@ def _totals(entries: list[dict]) -> dict:
     }
 
 
-def _daily_calorie_totals(entries: list[dict]) -> list:
+def _daily_macro_totals(entries: list[dict]) -> list:
+    """One entry per day that has at least one logged meal, summing calories AND macros —
+    the multi-macro adherence check needs all four, not just calories."""
     by_day: dict = {}
     for e in entries:
         day_key = e["created_at"][:10]
-        by_day[day_key] = by_day.get(day_key, 0) + (e["total_calories"] or 0)
+        d = by_day.setdefault(day_key, {"calories": 0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0})
+        d["calories"] += e["total_calories"] or 0
+        d["protein_g"] += e["protein_g"] or 0
+        d["carbs_g"] += e["carbs_g"] or 0
+        d["fat_g"] += e["fat_g"] or 0
     return [(date.fromisoformat(k), v) for k, v in by_day.items()]
+
+
+def _daily_calorie_totals(entries: list[dict]) -> list:
+    return [(d, macros["calories"]) for d, macros in _daily_macro_totals(entries)]
 
 
 def _validate_profile_payload(payload: dict):
@@ -307,6 +317,8 @@ _ANALYST_MESSAGES = {
         "fat_spike": "Fat mass gained {fat:.2f}kg of {total:.2f}kg total (over {pct:.0f}%) — suggests trimming {delta} kcal from fat, protein held at a {floor}g floor.",
         "on_track": "On track at {v:+.2f} kg/week, within the {min}-{max} kg/week target.",
         "adherence_gap": "Logged intake averages {avg} kcal against a {goal} kcal target ({pct:.0f}%) — the bigger issue is closing that gap, not raising the target further.",
+        "protein_gap": "Protein intake is averaging {avg}g against a {goal}g target ({pct:.0f}%) — worth prioritizing, since it's what protects muscle while gaining.",
+        "macro_context": " Dietary {macro} is averaging {avg}g against a {goal}g target ({pct:.0f}%).",
         "below_threshold": " Net change ({delta:+d} kcal) is below the {threshold} kcal commit threshold — no change made.",
         "cooldown": " Would have changed target by {delta:+d} kcal, but the last auto-adjustment was less than {days} days ago — skipped for now.",
         "toggle_off": " Would have changed target by {delta:+d} kcal, but Auto-Apply Targets is turned off in Settings — no change made.",
@@ -318,12 +330,19 @@ _ANALYST_MESSAGES = {
         "fat_spike": "Мастната маса се е увеличила с {fat:.2f}кг от общо {total:.2f}кг напълняване (над {pct:.0f}%) — предложение: намаление от {delta} кал. от мазнините, протеинът остава минимум {floor}г.",
         "on_track": "Всичко е наред — {v:+.2f} кг/седмица, в целевия диапазон {min}-{max} кг/седмица.",
         "adherence_gap": "Средно изяждаш {avg} кал. при цел {goal} кал. ({pct:.0f}%) — по-важно е да намалиш тази разлика, отколкото допълнително да вдигаме целта.",
+        "protein_gap": "Приемът на протеин е средно {avg}г при цел {goal}г ({pct:.0f}%) — си струва да се приоритизира, защото пази мускулите по време на качване.",
+        "macro_context": " Приемът на {macro} също е средно {avg}г при цел {goal}г ({pct:.0f}%).",
         "below_threshold": " Нетната промяна ({delta:+d} кал.) е под прага от {threshold} кал. за прилагане — няма промяна.",
         "cooldown": " Целта щеше да се промени с {delta:+d} кал., но последната автоматична промяна е била преди по-малко от {days} дни — пропуснато засега.",
         "toggle_off": " Целта щеше да се промени с {delta:+d} кал., но „Автоматично прилагане на целите“ е изключено в Настройки — няма промяна.",
         "committed": " Целта е променена от {old} на {new} кал.",
         "no_findings": "Оценено — не се задейства правило за промяна.",
     },
+}
+
+_MACRO_NAMES = {
+    "en": {"protein_g": "protein", "carbs_g": "carbs", "fat_g": "fat"},
+    "bg": {"protein_g": "протеин", "carbs_g": "въглехидрати", "fat_g": "мазнини"},
 }
 
 
@@ -341,6 +360,14 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
     `adherence_gap` below — since silently raising an already-unhit number just makes the
     gap bigger, not smaller. The manual "Recalculate" button can still show/apply it; that's
     an informed human choice, not a silent one.
+
+    Multi-tracks calories AND protein/carbs/fat (nutrition.calculate_macro_adherence()) — not
+    just calories. Protein specifically gets its own `protein_gap` finding whenever it's under
+    target, independent of which weight-trend rule fired (low protein undermines a gain phase
+    even when total calories look fine). fat_spike gets the dietary-fat adherence number
+    attached as context when available, so the note can say whether the measured body-fat
+    trend lines up with actual fat intake — but only calorie adherence gates auto-commit
+    behavior; the others are informational/coaching signals, not additional silent triggers.
 
     On a noteworthy finding (a real commit, a fat-spike, or an adherence gap), also asks
     Claude for a short "coach" note — what's happening, why, and 1-2 concrete, forgiving next
@@ -362,14 +389,18 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
         if not goals:
             return
 
-        daily_calories = _daily_calorie_totals(entries)
+        daily_macros = _daily_macro_totals(entries)
+        daily_calories = [(d, m["calories"]) for d, m in daily_macros]
         result = nutrition.calculate_adaptive_tdee(daily_calories, weight_entries)
         if result["insufficient_data"]:
             return  # not enough data to say anything meaningful — do nothing, not even a log
 
         suggestions = result["suggestions"]
         goal_calories = goals["calories"]
-        intake_adherence_pct = (result["avg_daily_intake"] / goal_calories) if goal_calories else 1.0
+        adherence = nutrition.calculate_macro_adherence(
+            daily_macros, date.fromisoformat(result["window_start"]), date.fromisoformat(result["window_end"]), goals,
+        )
+        calorie_adherence_pct = adherence.get("calories", {}).get("pct", 1.0)
 
         adherence_gap = False
         effective_suggestions = []
@@ -379,17 +410,23 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
                 findings.append(msgs["under_fueled"].format(
                     v=s["weight_velocity_kg_week"], min=nutrition.ADJUSTMENT_UNDER_FUELED_MIN_VELOCITY_KG_WEEK,
                     delta=nutrition.ADJUSTMENT_UNDER_FUELED_DELTA_KCAL))
-                if intake_adherence_pct < nutrition.ADJUSTMENT_ADHERENCE_GATE_PCT:
+                if calorie_adherence_pct < nutrition.ADJUSTMENT_ADHERENCE_GATE_PCT:
                     adherence_gap = True
                     continue  # withheld from auto-commit — see docstring
                 effective_suggestions.append(s)
             elif s["type"] == "fat_spike":
                 effective_suggestions.append(s)
-                findings.append(msgs["fat_spike"].format(
+                fat_spike_msg = msgs["fat_spike"].format(
                     fat=s["fat_mass_delta_kg"], total=s["weight_delta_kg"],
                     pct=nutrition.ADJUSTMENT_FAT_SPIKE_RATIO * 100,
                     delta=abs(nutrition.ADJUSTMENT_FAT_SPIKE_DELTA_KCAL),
-                    floor=nutrition.ADJUSTMENT_PROTEIN_FLOOR_G))
+                    floor=nutrition.ADJUSTMENT_PROTEIN_FLOOR_G)
+                fat_intake = adherence.get("fat_g")
+                if fat_intake and fat_intake["status"] != "on_target":
+                    fat_spike_msg += msgs["macro_context"].format(
+                        macro=_MACRO_NAMES[lang]["fat_g"], avg=fat_intake["avg"], goal=fat_intake["goal"],
+                        pct=fat_intake["pct"] * 100)
+                findings.append(fat_spike_msg)
             elif s["type"] == "on_track":
                 findings.append(msgs["on_track"].format(
                     v=s["weight_velocity_kg_week"], min=nutrition.ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK,
@@ -397,7 +434,14 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
 
         if adherence_gap:
             findings.append(msgs["adherence_gap"].format(
-                avg=result["avg_daily_intake"], goal=goal_calories, pct=intake_adherence_pct * 100))
+                avg=result["avg_daily_intake"], goal=goal_calories, pct=calorie_adherence_pct * 100))
+
+        # Protein gets its own finding regardless of which weight-trend rule fired — under-
+        # eating it undermines a gain phase even when total calories look fine.
+        protein_intake = adherence.get("protein_g")
+        if protein_intake and protein_intake["status"] == "under":
+            findings.append(msgs["protein_gap"].format(
+                avg=protein_intake["avg"], goal=protein_intake["goal"], pct=protein_intake["pct"] * 100))
 
         reason_text = " ".join(findings) if findings else msgs["no_findings"]
         total_delta = round(sum(s["calorie_delta"] for s in effective_suggestions))
@@ -450,7 +494,8 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
                     "elapsed_days": result["elapsed_days"],
                     "avg_daily_intake": result["avg_daily_intake"],
                     "goal_calories": goal_calories,
-                    "intake_adherence_pct": intake_adherence_pct,
+                    "intake_adherence_pct": calorie_adherence_pct,
+                    "adherence": adherence,
                     "findings": findings,
                     "adherence_gap": adherence_gap,
                     "committed": committed,

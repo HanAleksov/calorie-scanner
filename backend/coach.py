@@ -88,6 +88,12 @@ Suggest one specific, low-effort tactic (an easy calorie-dense add, spreading in
 smaller meals so it feels less overwhelming, a liquid-calorie option) and acknowledge that hitting a
 big number every day is genuinely hard, without guilt-tripping.
 
+You'll also be given how their protein/carbs/fat intake compares to target, not just calories. Only
+bring up a macro if it's notably off (well under or well over) and relevant to what's happening — e.g.
+if protein is running low, mention it's worth prioritizing since it protects muscle during a gain
+phase; if a fat-mass finding lines up with fat intake also running high, it's fine to connect the two.
+Don't recite every number just because you have it — one relevant macro callout is plenty.
+
 If a target was actually changed, say so plainly in your own words and say why in one clause — never
 use clinical/robotic phrasing like "delta," "kcal threshold," or "commit." Write like a person talking
 to a friend, not a formula printing a log line."""
@@ -102,18 +108,27 @@ ANALYST_NOTE_SCHEMA = {
 
 def generate_analyst_note(context: dict, lang: str = "en") -> str:
     """context keys: goal_type, weight_velocity_kg_week, elapsed_days, avg_daily_intake,
-    goal_calories, intake_adherence_pct, findings (list of short plain-English fact strings —
-    e.g. "under-fueled: velocity 0.05 kg/week vs 0.2 target", "fat spike: 71% of gain is fat"),
-    adherence_gap (bool), committed (bool), old_calories/new_calories (present if committed)."""
+    goal_calories, intake_adherence_pct, adherence (nutrition.calculate_macro_adherence()'s
+    output — per-field {avg, goal, pct, status} for calories/protein_g/carbs_g/fat_g, lets the
+    note reference any macro specifically, not just calories), findings (list of short
+    plain-English fact strings), adherence_gap (bool), committed (bool), old_calories/
+    new_calories (present if committed)."""
     client = _client()
     lang_name = LANGUAGE_NAMES.get(lang, "English")
     system = ANALYST_SYSTEM_PROMPT + f"\n\nRespond in {lang_name}."
+
+    macro_lines = []
+    for field, label in (("protein_g", "Protein"), ("carbs_g", "Carbs"), ("fat_g", "Fat")):
+        m = context.get("adherence", {}).get(field)
+        if m:
+            macro_lines.append(f"{label}: averaging {m['avg']}g against a {m['goal']}g target ({m['status']}).")
 
     lines = [
         f"Goal type: {context.get('goal_type') or 'not set'}.",
         f"Weight velocity: {context['weight_velocity_kg_week']:+.2f} kg/week over {context['elapsed_days']} days.",
         f"Logged intake averages {context['avg_daily_intake']} kcal/day against a {context['goal_calories']} kcal "
         f"target ({context['intake_adherence_pct'] * 100:.0f}%).",
+        *macro_lines,
         f"Findings: {'; '.join(context['findings']) if context['findings'] else 'none'}.",
         f"Adherence gap (eating well under their own current target): {'yes' if context['adherence_gap'] else 'no'}.",
     ]

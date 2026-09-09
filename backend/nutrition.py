@@ -105,8 +105,41 @@ AUTO_ADJUST_COOLDOWN_DAYS = 7      # at most one auto-committed change per rolli
 # raise is withheld from auto-commit (the manual "Recalculate" button can still show/apply it;
 # that's an informed human choice, not a silent one).
 ADJUSTMENT_ADHERENCE_GATE_PCT = 0.85
+ADJUSTMENT_ADHERENCE_OVER_PCT = 1.15  # symmetric upper bound — "significantly over" a macro
+                                        # target is as worth surfacing as "significantly under"
 COACH_NOTE_MIN_INTERVAL_DAYS = 3   # don't re-generate an AI coach note more often than this,
                                     # even if the same finding keeps re-evaluating true
+
+
+def calculate_macro_adherence(daily_macros: list, window_start: date, window_end: date, goals: dict) -> dict:
+    """daily_macros: list of (date, {"calories", "protein_g", "carbs_g", "fat_g"}) tuples, one
+    per day with at least one logged entry — matches main._daily_macro_totals()'s shape.
+    Averages each field over days within [window_start, window_end] that have logged intake
+    (calories > 0, same coverage rule calculate_adaptive_tdee uses), compares against goals,
+    and classifies each as "under"/"on_target"/"over" relative to
+    ADJUSTMENT_ADHERENCE_GATE_PCT/ADJUSTMENT_ADHERENCE_OVER_PCT. Multi-tracks every field —
+    not just calories — so a rule (or the coach note) can reference "you're averaging 61g fat
+    against a 40g target" even though only calorie adherence gates auto-commit behavior.
+    Returns {} if there are no days with logged intake in the window."""
+    in_window = [m for d, m in daily_macros if window_start <= d <= window_end and (m.get("calories") or 0) > 0]
+    if not in_window:
+        return {}
+
+    out = {}
+    for field in ("calories", "protein_g", "carbs_g", "fat_g"):
+        goal_value = goals.get(field)
+        if not goal_value:
+            continue
+        avg_value = sum(m.get(field, 0) or 0 for m in in_window) / len(in_window)
+        pct = avg_value / goal_value
+        if pct < ADJUSTMENT_ADHERENCE_GATE_PCT:
+            status = "under"
+        elif pct > ADJUSTMENT_ADHERENCE_OVER_PCT:
+            status = "over"
+        else:
+            status = "on_target"
+        out[field] = {"avg": round(avg_value), "goal": round(goal_value), "pct": round(pct, 3), "status": status}
+    return out
 
 
 def calculate_water_ml(weight_kg: float, activity_level: str, is_summer: bool) -> int:

@@ -1,6 +1,15 @@
-const CURRENT_APP_VERSION = 9;
+const CURRENT_APP_VERSION = 10;
 
 const WHATS_NEW = [
+  {
+    version: 10,
+    en: [
+      "📊 Full macro tracking in the Analyst — it now compares your logged protein, carbs, and fat against their targets too, not just calories, so its notes can call out things like running consistently over your fat target or under on protein.",
+    ],
+    bg: [
+      "📊 Пълно проследяване на макросите в Анализатора — вече сравнява и логнатите протеин, въглехидрати и мазнини с целите им, не само калориите, така че бележките му могат да отбележат неща като постоянно надвишаване на целта за мазнини или недостиг на протеин.",
+    ],
+  },
   {
     version: 9,
     en: [
