@@ -3,7 +3,7 @@ import os
 
 import anthropic
 
-MODEL = "claude-opus-5"
+MODEL = "claude-sonnet-5"
 
 SYSTEM_PROMPT = """You are a friendly, concise nutrition coach inside a personal calorie-tracking app.
 Given a snapshot of someone's day so far (current local time, calories/macros eaten vs their goal,

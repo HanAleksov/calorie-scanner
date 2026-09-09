@@ -6,7 +6,7 @@ from io import BytesIO
 import anthropic
 from PIL import Image
 
-MODEL = "claude-opus-5"
+MODEL = "claude-sonnet-5"
 
 # Anthropic's own guidance: vision quality plateaus above ~1.15 megapixels — beyond that,
 # extra resolution costs tokens without helping accuracy. Phone photos are typically 8-12MP,
@@ -40,6 +40,15 @@ cutlery, cups, a hand) to judge true volume and weight. Estimate the quantity ac
 photo, not a manufacturer's standard serving size — if the photo clearly shows more or less than a
 "typical" serving (e.g. a large handful of chips, not a 30g bag-serving), go with what's visible.
 
+SERVING SIZE FOR SHARED DISHES: If the photo shows a serving dish, baking tray, pot, or platter that
+clearly holds more than one person's portion (a family-style casserole, a full tray of meatballs, a
+communal pot of stew), estimate ONE typical individual serving being eaten — not the entire visible
+quantity in the dish. A normal individual plate of a hearty main is roughly 300-450g total; don't
+multiply out every visible piece (e.g. don't count all 15-20 meatballs in a serving tray as one meal)
+unless the photo unambiguously shows a single already-plated individual portion, or the user's note
+says otherwise (e.g. "this is for the whole family" or "logging half the tray"). Treat this serving-
+size judgment call itself as a source of uncertainty for the confidence rating below.
+
 USER NOTES: If the user provides a text note alongside the photo(s), treat it as authoritative for
 whatever it specifically describes. A note that adds an item not fully shown in the photo (e.g. "add
 3 slices of bread") means: add exactly one corresponding item, sized from the note, applied once.
@@ -61,11 +70,25 @@ more depending on batter/breading and surface area. If you can't tell whether a 
 fat, let this raise your confidence rating toward "low"/"medium" rather than silently defaulting
 to the leanest interpretation — but always give a number, never omit the fat.
 
-If the dish is a stacked or mixed dish, has sauces, or portions are hard to judge, set confidence to
-"low" — do not present a guess as precise. Set confidence to "medium" when some items are clear but
-others are estimated. Set confidence to "high" only when portions and ingredients are clearly
-visible and unambiguous. A second angle photo, when given, should let you raise confidence versus a
-single photo of the same dish.
+PLAUSIBILITY CHECK: Before finalizing, sanity-check each item's macros against its own est_grams.
+protein_g should almost never exceed roughly 25-30% of est_grams for any real food — even lean meat
+or fish tops out around 20-25g protein per 100g of edible mass, and breading, sauce, starch, or bone
+dilute that further, never concentrate it. fat_g and carbs_g should likewise stay within a plausible
+calories-per-gram range for what the item actually is. If an item's macros don't add up to a
+believable density for that food, revise the estimate — the schema accepting any number doesn't make
+that number physically real.
+
+ITEM INTEGRITY: Every entry in items must be a real, physically distinct food component with a
+positive est_grams. Never add a zero-gram, zero-calorie, or purely explanatory pseudo-item (e.g. a
+line that just restates a correction, a running total, or a note-to-self) — if something needs
+adjusting, fold it into the relevant real item instead of inventing a placeholder entry.
+
+If the dish is a stacked or mixed dish, has sauces, portions are hard to judge, or the total serving
+size itself is ambiguous (see SERVING SIZE FOR SHARED DISHES above), set confidence to "low" — do not
+present a guess as precise. Set confidence to "medium" when some items are clear but others are
+estimated. Set confidence to "high" only when portions and ingredients are clearly visible and
+unambiguous. A second angle photo, when given, should let you raise confidence versus a single photo
+of the same dish.
 
 Also rate the meal's overall "energy quality" on a 0-5 scale — this means how likely the food is to
 give steady, sustained energy versus a quick spike and crash. Use this rubric:
