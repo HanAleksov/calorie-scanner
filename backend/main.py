@@ -45,6 +45,11 @@ def _startup():
     db.init_db()
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 def current_user_id(x_user_id: int | None = Header(default=None)) -> int:
     if x_user_id is None:
         raise HTTPException(401, "missing X-User-Id header — pick or create a profile first")
