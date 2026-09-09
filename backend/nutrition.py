@@ -98,6 +98,16 @@ AUTO_ADJUST_MIN_COMMIT_KCAL = 50   # a computed change smaller than this is nois
 AUTO_ADJUST_COOLDOWN_DAYS = 7      # at most one auto-committed change per rolling week, even if
                                     # weight is logged/scanned more often than that
 
+# "Bridge to reality": under_fueled infers "raise the target" purely from weight velocity, which
+# can't tell "target is too low" apart from "not eating anywhere near the current target in the
+# first place." Below this fraction of the current calorie goal, the second explanation is more
+# likely, and auto-raising further would just make an already-unhit number bigger — so the
+# raise is withheld from auto-commit (the manual "Recalculate" button can still show/apply it;
+# that's an informed human choice, not a silent one).
+ADJUSTMENT_ADHERENCE_GATE_PCT = 0.85
+COACH_NOTE_MIN_INTERVAL_DAYS = 3   # don't re-generate an AI coach note more often than this,
+                                    # even if the same finding keeps re-evaluating true
+
 
 def calculate_water_ml(weight_kg: float, activity_level: str, is_summer: bool) -> int:
     total = weight_kg * WATER_ML_PER_KG

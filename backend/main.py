@@ -299,20 +299,66 @@ def log_water(payload: dict, user_id: int = Depends(current_user_id)):
 
 # ---------- autonomous analyst engine ----------
 
-def evaluate_and_auto_adjust_user(conn, user_id: int) -> None:
+# Deterministic, localized fallback text — always written to analyst_logs.reason_text
+# regardless of whether an AI coach_note is also generated for that row.
+_ANALYST_MESSAGES = {
+    "en": {
+        "under_fueled": "Weight velocity {v:+.2f} kg/week is below the {min} kg/week target (suggests +{delta} kcal).",
+        "fat_spike": "Fat mass gained {fat:.2f}kg of {total:.2f}kg total (over {pct:.0f}%) — suggests trimming {delta} kcal from fat, protein held at a {floor}g floor.",
+        "on_track": "On track at {v:+.2f} kg/week, within the {min}-{max} kg/week target.",
+        "adherence_gap": "Logged intake averages {avg} kcal against a {goal} kcal target ({pct:.0f}%) — the bigger issue is closing that gap, not raising the target further.",
+        "below_threshold": " Net change ({delta:+d} kcal) is below the {threshold} kcal commit threshold — no change made.",
+        "cooldown": " Would have changed target by {delta:+d} kcal, but the last auto-adjustment was less than {days} days ago — skipped for now.",
+        "toggle_off": " Would have changed target by {delta:+d} kcal, but Auto-Apply Targets is turned off in Settings — no change made.",
+        "committed": " Target changed from {old} to {new} kcal.",
+        "no_findings": "Evaluated — no adjustment rule fired.",
+    },
+    "bg": {
+        "under_fueled": "Скоростта на качване {v:+.2f} кг/седмица е под целта от {min} кг/седмица (предложение: +{delta} кал.).",
+        "fat_spike": "Мастната маса се е увеличила с {fat:.2f}кг от общо {total:.2f}кг напълняване (над {pct:.0f}%) — предложение: намаление от {delta} кал. от мазнините, протеинът остава минимум {floor}г.",
+        "on_track": "Всичко е наред — {v:+.2f} кг/седмица, в целевия диапазон {min}-{max} кг/седмица.",
+        "adherence_gap": "Средно изяждаш {avg} кал. при цел {goal} кал. ({pct:.0f}%) — по-важно е да намалиш тази разлика, отколкото допълнително да вдигаме целта.",
+        "below_threshold": " Нетната промяна ({delta:+d} кал.) е под прага от {threshold} кал. за прилагане — няма промяна.",
+        "cooldown": " Целта щеше да се промени с {delta:+d} кал., но последната автоматична промяна е била преди по-малко от {days} дни — пропуснато засега.",
+        "toggle_off": " Целта щеше да се промени с {delta:+d} кал., но „Автоматично прилагане на целите“ е изключено в Настройки — няма промяна.",
+        "committed": " Целта е променена от {old} на {new} кал.",
+        "no_findings": "Оценено — не се задейства правило за промяна.",
+    },
+}
+
+
+def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
     """Runs synchronously after every new weigh-in is stored. Computes the same
     adaptive-TDEE/suggestion engine the manual "Recalculate From My Data" button uses and,
     unless there's insufficient data, a cooldown is active, or the user has Auto-Apply
     Targets turned off, commits the result directly to goals — always leaving a row in
-    analyst_logs explaining what it saw and what (if anything) it did. Never raises: a bug
-    in this best-effort background analysis must not break the weigh-in request that
-    triggered it."""
+    analyst_logs explaining what it saw and what (if anything) it did.
+
+    "Bridge to reality": under_fueled infers "raise the target" purely from weight velocity,
+    which can't distinguish a target that's genuinely too low from one that's simply not
+    being hit yet. When logged intake is well below the *current* target
+    (ADJUSTMENT_ADHERENCE_GATE_PCT), that raise is withheld from auto-commit — see
+    `adherence_gap` below — since silently raising an already-unhit number just makes the
+    gap bigger, not smaller. The manual "Recalculate" button can still show/apply it; that's
+    an informed human choice, not a silent one.
+
+    On a noteworthy finding (a real commit, a fat-spike, or an adherence gap), also asks
+    Claude for a short "coach" note — what's happening, why, and 1-2 concrete, forgiving next
+    steps — rate-limited independently of the commit cooldown (COACH_NOTE_MIN_INTERVAL_DAYS)
+    so a persisting finding doesn't call the API every single day.
+
+    Never raises: a bug in this best-effort background analysis must not break the weigh-in
+    request that triggered it."""
+    if lang not in ALLOWED_LANGS:
+        lang = "bg"
+    msgs = _ANALYST_MESSAGES[lang]
     try:
         weight_entries = db.get_weight_log(conn, user_id, limit=60)
         end = tzutil.today_local()
         start = end - timedelta(days=nutrition.ADAPTIVE_LOOKBACK_DAYS - 1)
         entries = db.get_entries_between(conn, user_id, start.isoformat(), end.isoformat())
         goals = db.get_goals(conn, user_id)
+        profile = db.get_profile(conn, user_id)
         if not goals:
             return
 
@@ -322,67 +368,101 @@ def evaluate_and_auto_adjust_user(conn, user_id: int) -> None:
             return  # not enough data to say anything meaningful — do nothing, not even a log
 
         suggestions = result["suggestions"]
-        total_delta = round(sum(s["calorie_delta"] for s in suggestions))
-        prioritize_carbs = any(s["type"] == "fat_spike" for s in suggestions)
-        now = tzutil.now_local_naive().isoformat(timespec="seconds")
+        goal_calories = goals["calories"]
+        intake_adherence_pct = (result["avg_daily_intake"] / goal_calories) if goal_calories else 1.0
 
-        reason_parts = []
+        adherence_gap = False
+        effective_suggestions = []
+        findings = []
         for s in suggestions:
             if s["type"] == "under_fueled":
-                reason_parts.append(
-                    f"Weight velocity {s['weight_velocity_kg_week']:+.2f} kg/week is below the "
-                    f"{nutrition.ADJUSTMENT_UNDER_FUELED_MIN_VELOCITY_KG_WEEK} kg/week floor "
-                    f"(suggests +{nutrition.ADJUSTMENT_UNDER_FUELED_DELTA_KCAL} kcal)."
-                )
+                findings.append(msgs["under_fueled"].format(
+                    v=s["weight_velocity_kg_week"], min=nutrition.ADJUSTMENT_UNDER_FUELED_MIN_VELOCITY_KG_WEEK,
+                    delta=nutrition.ADJUSTMENT_UNDER_FUELED_DELTA_KCAL))
+                if intake_adherence_pct < nutrition.ADJUSTMENT_ADHERENCE_GATE_PCT:
+                    adherence_gap = True
+                    continue  # withheld from auto-commit — see docstring
+                effective_suggestions.append(s)
             elif s["type"] == "fat_spike":
-                reason_parts.append(
-                    f"Fat mass gained {s['fat_mass_delta_kg']:.2f}kg of {s['weight_delta_kg']:.2f}kg total "
-                    f"(over the {nutrition.ADJUSTMENT_FAT_SPIKE_RATIO*100:.0f}% threshold) — suggests trimming "
-                    f"{abs(nutrition.ADJUSTMENT_FAT_SPIKE_DELTA_KCAL)} kcal from fat, protein held at a "
-                    f"{nutrition.ADJUSTMENT_PROTEIN_FLOOR_G}g floor."
-                )
+                effective_suggestions.append(s)
+                findings.append(msgs["fat_spike"].format(
+                    fat=s["fat_mass_delta_kg"], total=s["weight_delta_kg"],
+                    pct=nutrition.ADJUSTMENT_FAT_SPIKE_RATIO * 100,
+                    delta=abs(nutrition.ADJUSTMENT_FAT_SPIKE_DELTA_KCAL),
+                    floor=nutrition.ADJUSTMENT_PROTEIN_FLOOR_G))
             elif s["type"] == "on_track":
-                reason_parts.append(
-                    f"On track at {s['weight_velocity_kg_week']:+.2f} kg/week, within the "
-                    f"{nutrition.ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK}-{nutrition.ADJUSTMENT_SWEET_SPOT_MAX_KG_WEEK} kg/week target."
-                )
-        reason_text = " ".join(reason_parts) if reason_parts else "Evaluated — no adjustment rule fired."
+                findings.append(msgs["on_track"].format(
+                    v=s["weight_velocity_kg_week"], min=nutrition.ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK,
+                    max=nutrition.ADJUSTMENT_SWEET_SPOT_MAX_KG_WEEK))
+
+        if adherence_gap:
+            findings.append(msgs["adherence_gap"].format(
+                avg=result["avg_daily_intake"], goal=goal_calories, pct=intake_adherence_pct * 100))
+
+        reason_text = " ".join(findings) if findings else msgs["no_findings"]
+        total_delta = round(sum(s["calorie_delta"] for s in effective_suggestions))
+        prioritize_carbs = any(s["type"] == "fat_spike" for s in effective_suggestions)
+        now = tzutil.now_local_naive().isoformat(timespec="seconds")
+
+        old_calories = goals["calories"]
+        new_calories = old_calories
+        committed = False
 
         if abs(total_delta) < nutrition.AUTO_ADJUST_MIN_COMMIT_KCAL:
-            db.add_analyst_log(
-                conn, user_id, created_at=now, old_calories=goals["calories"], new_calories=goals["calories"],
-                reason_text=f"{reason_text} Net change ({total_delta:+d} kcal) is below the "
-                            f"{nutrition.AUTO_ADJUST_MIN_COMMIT_KCAL} kcal commit threshold — no change made.",
-            )
-            return
+            reason_text += msgs["below_threshold"].format(
+                delta=total_delta, threshold=nutrition.AUTO_ADJUST_MIN_COMMIT_KCAL)
+        else:
+            last_commit = db.get_last_committed_adjustment(conn, user_id)
+            cooldown_active = False
+            if last_commit:
+                days_since = tzutil.now_local_naive() - datetime.fromisoformat(last_commit["created_at"])
+                cooldown_active = days_since < timedelta(days=nutrition.AUTO_ADJUST_COOLDOWN_DAYS)
 
-        last_commit = db.get_last_committed_adjustment(conn, user_id)
-        if last_commit:
-            days_since = tzutil.now_local_naive() - datetime.fromisoformat(last_commit["created_at"])
-            if days_since < timedelta(days=nutrition.AUTO_ADJUST_COOLDOWN_DAYS):
-                db.add_analyst_log(
-                    conn, user_id, created_at=now, old_calories=goals["calories"], new_calories=goals["calories"],
-                    reason_text=f"{reason_text} Would have changed target by {total_delta:+d} kcal, but the last "
-                                f"auto-adjustment was less than {nutrition.AUTO_ADJUST_COOLDOWN_DAYS} days ago — "
-                                "skipped (cooldown).",
-                )
-                return
+            if cooldown_active:
+                reason_text += msgs["cooldown"].format(delta=total_delta, days=nutrition.AUTO_ADJUST_COOLDOWN_DAYS)
+            elif not goals.get("auto_apply_targets", 1):
+                reason_text += msgs["toggle_off"].format(delta=total_delta)
+            else:
+                updated = nutrition.apply_calorie_adjustment(goals, total_delta, prioritize_carbs=prioritize_carbs)
+                db.set_goals(conn, user_id, calories=updated["calories"], protein_g=updated["protein_g"],
+                              carbs_g=updated["carbs_g"], fat_g=updated["fat_g"])
+                new_calories = updated["calories"]
+                committed = True
+                reason_text += msgs["committed"].format(old=old_calories, new=new_calories)
 
-        if not goals.get("auto_apply_targets", 1):
-            db.add_analyst_log(
-                conn, user_id, created_at=now, old_calories=goals["calories"], new_calories=goals["calories"],
-                reason_text=f"{reason_text} Would have changed target by {total_delta:+d} kcal, but Auto-Apply "
-                            "Targets is turned off in Settings — no change made.",
-            )
-            return
+        # Rate-limit the AI note independently of the commit cooldown, so a persisting
+        # adherence-gap finding (which can recur every single weigh-in) doesn't call the
+        # API daily — only a real commit, a fat-spike, or an adherence gap is worth asking
+        # for one at all, and even then at most once every COACH_NOTE_MIN_INTERVAL_DAYS.
+        worth_noting = committed or adherence_gap or any(s["type"] == "fat_spike" for s in effective_suggestions)
+        note_due = True
+        last_note = db.get_last_coach_note(conn, user_id)
+        if last_note:
+            days_since_note = tzutil.now_local_naive() - datetime.fromisoformat(last_note["created_at"])
+            note_due = days_since_note >= timedelta(days=nutrition.COACH_NOTE_MIN_INTERVAL_DAYS)
 
-        updated = nutrition.apply_calorie_adjustment(goals, total_delta, prioritize_carbs=prioritize_carbs)
-        old_calories = goals["calories"]
-        db.set_goals(conn, user_id, calories=updated["calories"], protein_g=updated["protein_g"],
-                      carbs_g=updated["carbs_g"], fat_g=updated["fat_g"])
+        coach_note = None
+        if worth_noting and note_due:
+            try:
+                coach_note = coach.generate_analyst_note({
+                    "goal_type": profile.get("goal_type") if profile else None,
+                    "weight_velocity_kg_week": result["weight_velocity_kg_week"],
+                    "elapsed_days": result["elapsed_days"],
+                    "avg_daily_intake": result["avg_daily_intake"],
+                    "goal_calories": goal_calories,
+                    "intake_adherence_pct": intake_adherence_pct,
+                    "findings": findings,
+                    "adherence_gap": adherence_gap,
+                    "committed": committed,
+                    "old_calories": old_calories,
+                    "new_calories": new_calories,
+                }, lang=lang)
+            except Exception:
+                coach_note = None  # best-effort — the deterministic reason_text always covers this row
+
         db.add_analyst_log(
-            conn, user_id, created_at=now, old_calories=old_calories, new_calories=updated["calories"],
-            reason_text=f"{reason_text} Target changed from {old_calories} to {updated['calories']} kcal.",
+            conn, user_id, created_at=now, old_calories=old_calories, new_calories=new_calories,
+            reason_text=reason_text, coach_note=coach_note,
         )
     except Exception:
         pass
@@ -410,6 +490,9 @@ def log_weight(payload: dict, user_id: int = Depends(current_user_id)):
     weight_kg = payload.get("weight_kg")
     if not isinstance(weight_kg, (int, float)) or weight_kg <= 0:
         raise HTTPException(400, "weight_kg must be a positive number")
+    lang = payload.get("lang")
+    if lang not in ALLOWED_LANGS:
+        lang = "bg"
 
     optional_fields = {}
     for field in ("fat_mass_kg", "muscle_mass_kg", "water_pct"):
@@ -427,7 +510,7 @@ def log_weight(payload: dict, user_id: int = Depends(current_user_id)):
             conn, user_id, weight_kg, tzutil.now_local_naive().isoformat(timespec="seconds"),
             **optional_fields,
         )
-        evaluate_and_auto_adjust_user(conn, user_id)
+        evaluate_and_auto_adjust_user(conn, user_id, lang=lang)
     return entry
 
 

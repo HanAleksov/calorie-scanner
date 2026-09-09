@@ -63,6 +63,9 @@ def _migrate(conn) -> None:
         if "auto_apply_targets" not in goals_cols:
             conn.execute("ALTER TABLE goals ADD COLUMN auto_apply_targets INTEGER NOT NULL DEFAULT 1")
 
+    if _table_exists(conn, "analyst_logs") and "coach_note" not in _table_columns(conn, "analyst_logs"):
+        conn.execute("ALTER TABLE analyst_logs ADD COLUMN coach_note TEXT")
+
     if _table_exists(conn, "weight_log"):
         wl_cols = _table_columns(conn, "weight_log")
         if "fat_mass_kg" not in wl_cols:
@@ -449,14 +452,25 @@ def set_auto_apply_targets(conn, user_id: int, enabled: bool) -> dict:
 # ---------- analyst log (autonomous auto-adjustment engine) ----------
 
 def add_analyst_log(conn, user_id: int, *, created_at: str, old_calories: int | None,
-                     new_calories: int | None, reason_text: str) -> dict:
+                     new_calories: int | None, reason_text: str, coach_note: str | None = None) -> dict:
     cur = conn.execute(
-        """INSERT INTO analyst_logs (user_id, created_at, old_calories, new_calories, reason_text)
-           VALUES (?, ?, ?, ?, ?)""",
-        (user_id, created_at, old_calories, new_calories, reason_text),
+        """INSERT INTO analyst_logs (user_id, created_at, old_calories, new_calories, reason_text, coach_note)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (user_id, created_at, old_calories, new_calories, reason_text, coach_note),
     )
     row = conn.execute("SELECT * FROM analyst_logs WHERE id = ?", (cur.lastrowid,)).fetchone()
     return dict(row)
+
+
+def get_last_coach_note(conn, user_id: int) -> dict | None:
+    """Most recent analyst_logs row that actually got an AI-generated coach_note — used to
+    rate-limit how often a new one is generated, independent of the auto-commit cooldown."""
+    row = conn.execute(
+        """SELECT * FROM analyst_logs WHERE user_id = ? AND coach_note IS NOT NULL
+           ORDER BY created_at DESC LIMIT 1""",
+        (user_id,),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def get_analyst_logs(conn, user_id: int, limit: int = 20) -> list:

@@ -917,7 +917,7 @@ $("logWeightBtn").addEventListener("click", async () => {
     toast(t("enter_weight_first"));
     return;
   }
-  const payload = { weight_kg: weightKg };
+  const payload = { weight_kg: weightKg, lang: currentLang() };
   const fatMass = Number($("scaleFatMass").value);
   const muscleMass = Number($("scaleMuscleMass").value);
   const waterPct = Number($("scaleWaterPct").value);
@@ -1051,11 +1051,14 @@ async function loadAnalystFeed() {
   const deltaBadge = changed
     ? `<span class="analyst-feed-delta ${latest.new_calories > latest.old_calories ? "up" : "down"}">${latest.old_calories} → ${latest.new_calories} kcal</span>`
     : "";
+  // The AI coach_note (what/why/how, forgiving of imperfect adherence) is the primary
+  // message when present; reason_text is the always-available, localized technical fallback.
+  const latestMessage = latest.coach_note || latest.reason_text;
   $("analystFeedLatest").innerHTML = `
     <div class="analyst-feed-entry">
       <div class="analyst-feed-icon">${ICON.zap}</div>
       <div class="analyst-feed-body">
-        <div class="analyst-feed-reason">${escapeHtml(latest.reason_text)}</div>
+        <div class="analyst-feed-reason">${escapeHtml(latestMessage)}</div>
         ${deltaBadge}
         <div class="analyst-feed-meta">${_formatLogTime(latest.created_at)}</div>
       </div>
@@ -1066,7 +1069,8 @@ async function loadAnalystFeed() {
         .map((log) => {
           const rowChanged = log.new_calories !== log.old_calories;
           const rowDelta = rowChanged ? ` — ${log.old_calories} → ${log.new_calories} kcal` : "";
-          return `<div class="analyst-feed-history-row">${_formatLogTime(log.created_at)}: ${escapeHtml(log.reason_text)}${rowDelta}</div>`;
+          const message = log.coach_note || log.reason_text;
+          return `<div class="analyst-feed-history-row">${_formatLogTime(log.created_at)}: ${escapeHtml(message)}${rowDelta}</div>`;
         })
         .join("")
     : `<div class="analyst-feed-history-row">${t("analyst_feed_no_history")}</div>`;

@@ -1,6 +1,15 @@
-const CURRENT_APP_VERSION = 8;
+const CURRENT_APP_VERSION = 9;
 
 const WHATS_NEW = [
+  {
+    version: 9,
+    en: [
+      "🧠 Smarter Analyst — it now checks whether you're actually hitting your current calorie target before suggesting a higher one, and writes a short coach-style note (what's happening, why, and one easy next step) instead of just a raw number change.",
+    ],
+    bg: [
+      "🧠 По-умен анализ — вече проверява дали изобщо достигаш текущата си калорийна цел, преди да предложи по-висока, и пише кратка бележка като от треньор (какво се случва, защо и една лесна следваща стъпка) вместо просто промяна на число.",
+    ],
+  },
   {
     version: 8,
     en: [

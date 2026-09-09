@@ -96,5 +96,6 @@ CREATE TABLE IF NOT EXISTS analyst_logs (
     created_at TEXT NOT NULL,
     old_calories INTEGER,   -- NULL-equal-to-new_calories rows are informational (no-op) entries
     new_calories INTEGER,
-    reason_text TEXT NOT NULL
+    reason_text TEXT NOT NULL,  -- deterministic, localized fallback — always present
+    coach_note TEXT             -- AI-generated "what/why/how" note, only on noteworthy events
 );
