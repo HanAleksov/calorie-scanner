@@ -6,7 +6,7 @@ from io import BytesIO
 import anthropic
 from PIL import Image
 
-MODEL = "claude-sonnet-5"
+MODEL = "claude-sonnet-5-5"
 
 # Anthropic's own guidance: vision quality plateaus above ~1.15 megapixels — beyond that,
 # extra resolution costs tokens without helping accuracy. Phone photos are typically 8-12MP,
