@@ -1080,4 +1080,16 @@ def get_upload(filename: str):
     return FileResponse(path)
 
 
-app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+class NoCacheStaticFiles(StaticFiles):
+    """Always revalidate frontend files (ETag -> cheap 304). The service worker is what's supposed
+    to keep an installed PWA fresh, but it can't register on plain http:// (the current
+    sslip.io address), and without any Cache-Control header browsers apply heuristic caching —
+    an old app.js/index.html can then be served for days after a deploy."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", NoCacheStaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
