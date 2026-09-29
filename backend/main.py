@@ -77,22 +77,63 @@ def _totals(entries: list[dict]) -> dict:
     }
 
 
-def _daily_macro_totals(entries: list[dict]) -> list:
-    """One entry per day that has at least one logged meal, summing calories AND macros —
-    the multi-macro adherence check needs all four, not just calories."""
+def _day_is_complete(day_entries: list[dict], mark: str | None) -> bool:
+    """Whether a day's entries can be trusted as a full record of what was eaten. An explicit
+    user mark wins; otherwise a day needs at least COMPLETE_DAY_MIN_MEAL_TYPES distinct meal
+    types. Judged by meal types, not calories, so a genuinely low-eating day still counts (and
+    can still reveal real under-eating) while a lone logged snack does not."""
+    if mark == "skip":
+        return False
+    if mark == "complete":
+        return True
+    return len({e["meal_type"] for e in day_entries}) >= nutrition.COMPLETE_DAY_MIN_MEAL_TYPES
+
+
+def _entries_by_day(entries: list[dict]) -> dict:
     by_day: dict = {}
     for e in entries:
-        day_key = e["created_at"][:10]
-        d = by_day.setdefault(day_key, {"calories": 0, "protein_g": 0.0, "carbs_g": 0.0, "fat_g": 0.0})
-        d["calories"] += e["total_calories"] or 0
-        d["protein_g"] += e["protein_g"] or 0
-        d["carbs_g"] += e["carbs_g"] or 0
-        d["fat_g"] += e["fat_g"] or 0
-    return [(date.fromisoformat(k), v) for k, v in by_day.items()]
+        by_day.setdefault(e["created_at"][:10], []).append(e)
+    return by_day
 
 
-def _daily_calorie_totals(entries: list[dict]) -> list:
-    return [(d, macros["calories"]) for d, macros in _daily_macro_totals(entries)]
+def _daily_macro_totals(entries: list[dict], marks: dict | None = None, complete_only: bool = True) -> list:
+    """One entry per day, summing calories AND macros. By default only days that count as a
+    full record (_day_is_complete) are returned — a day with nothing logged or just one logged
+    snack is *unknown*, not "ate 700 kcal", and must not drag intake averages down."""
+    marks = marks or {}
+    out = []
+    for day_key, day_entries in _entries_by_day(entries).items():
+        if complete_only and not _day_is_complete(day_entries, marks.get(day_key)):
+            continue
+        out.append((date.fromisoformat(day_key), {
+            "calories": sum(e["total_calories"] or 0 for e in day_entries),
+            "protein_g": sum(e["protein_g"] or 0 for e in day_entries),
+            "carbs_g": sum(e["carbs_g"] or 0 for e in day_entries),
+            "fat_g": sum(e["fat_g"] or 0 for e in day_entries),
+        }))
+    return out
+
+
+def _daily_calorie_totals(entries: list[dict], marks: dict | None = None) -> list:
+    return [(d, macros["calories"]) for d, macros in _daily_macro_totals(entries, marks)]
+
+
+def _tracking_summary(entries: list[dict], marks: dict, start: date, end: date) -> dict:
+    """How much of [start, end] is usable data: complete days, days with some-but-untrusted
+    entries, and days with nothing at all."""
+    by_day = _entries_by_day(entries)
+    complete = partial = 0
+    for i in range((end - start).days + 1):
+        key = (start + timedelta(days=i)).isoformat()
+        if key not in by_day:
+            continue
+        if _day_is_complete(by_day[key], marks.get(key)):
+            complete += 1
+        else:
+            partial += 1
+    window_days = (end - start).days + 1
+    return {"window_days": window_days, "complete_days": complete, "partial_days": partial,
+            "empty_days": window_days - complete - partial}
 
 
 def _validate_profile_payload(payload: dict):
@@ -292,9 +333,13 @@ def today(user_id: int = Depends(current_user_id)):
         entries = db.get_entries_for_date(conn, user_id, today_str)
         goals = db.get_goals(conn, user_id)
         water_ml = db.get_water_total_for_date(conn, user_id, today_str)
+        mark = db.get_day_marks(conn, user_id, today_str, today_str).get(today_str)
+    day_status = _day_status(entries, mark)
     entries = [_entry_to_public(e) for e in entries]
     return {
         "date": today_str,
+        "day_status": day_status,
+        "day_mark": mark,
         "entries": entries,
         "totals": _totals(entries),
         "goals": goals,
@@ -320,26 +365,38 @@ _ANALYST_MESSAGES = {
     "en": {
         "under_fueled": "Weight velocity {v:+.2f} kg/week is below the {min} kg/week target (suggests +{delta} kcal).",
         "fat_spike": "Fat mass gained {fat:.2f}kg of {total:.2f}kg total (over {pct:.0f}%) — suggests trimming {delta} kcal from fat, protein held at a {floor}g floor.",
-        "on_track": "On track at {v:+.2f} kg/week, within the {min}-{max} kg/week target.",
+        "on_track": "On track at {v:+.2f} kg/week, within the {min:+g} to {max:+g} kg/week range.",
+        "lose_stalled": "Weight is moving {v:+.2f} kg/week — not really dropping (suggests {delta:+d} kcal).",
+        "lose_too_fast": "Weight is dropping {v:+.2f} kg/week, faster than a sustainable pace (suggests {delta:+d} kcal).",
+        "maintain_drift_up": "Weight is drifting up at {v:+.2f} kg/week while the goal is maintenance (suggests {delta:+d} kcal).",
+        "maintain_drift_down": "Weight is drifting down at {v:+.2f} kg/week while the goal is maintenance (suggests {delta:+d} kcal).",
+        "partial_days": " {n} of the last {total} days were only partly logged, so they're left out of these averages rather than counted as low eating.",
         "adherence_gap": "Logged intake averages {avg} kcal against a {goal} kcal target ({pct:.0f}%) — the bigger issue is closing that gap, not raising the target further.",
-        "protein_gap": "Protein intake is averaging {avg}g against a {goal}g target ({pct:.0f}%) — worth prioritizing, since it's what protects muscle while gaining.",
+        "protein_gap": "Protein intake is averaging {avg}g against a {goal}g target ({pct:.0f}%) — worth prioritizing, since it's what protects muscle.",
         "macro_context": " Dietary {macro} is averaging {avg}g against a {goal}g target ({pct:.0f}%).",
         "below_threshold": " Net change ({delta:+d} kcal) is below the {threshold} kcal commit threshold — no change made.",
         "cooldown": " Would have changed target by {delta:+d} kcal, but the last auto-adjustment was less than {days} days ago — skipped for now.",
         "toggle_off": " Would have changed target by {delta:+d} kcal, but Auto-Apply Targets is turned off in Settings — no change made.",
+        "manual_only": " Would have changed target by {delta:+d} kcal — automatic changes only apply to a weight-gain goal, so review this in the Plan tab.",
         "committed": " Target changed from {old} to {new} kcal.",
         "no_findings": "Evaluated — no adjustment rule fired.",
     },
     "bg": {
         "under_fueled": "Скоростта на качване {v:+.2f} кг/седмица е под целта от {min} кг/седмица (предложение: +{delta} кал.).",
         "fat_spike": "Мастната маса се е увеличила с {fat:.2f}кг от общо {total:.2f}кг напълняване (над {pct:.0f}%) — предложение: намаление от {delta} кал. от мазнините, протеинът остава минимум {floor}г.",
-        "on_track": "Всичко е наред — {v:+.2f} кг/седмица, в целевия диапазон {min}-{max} кг/седмица.",
+        "on_track": "Всичко е наред — {v:+.2f} кг/седмица, в диапазона от {min:+g} до {max:+g} кг/седмица.",
+        "lose_stalled": "Теглото се движи с {v:+.2f} кг/седмица — почти не намалява (предложение: {delta:+d} кал.).",
+        "lose_too_fast": "Теглото намалява с {v:+.2f} кг/седмица — по-бързо от устойчивото темпо (предложение: {delta:+d} кал.).",
+        "maintain_drift_up": "Теглото върви нагоре с {v:+.2f} кг/седмица, а целта е поддържане (предложение: {delta:+d} кал.).",
+        "maintain_drift_down": "Теглото върви надолу с {v:+.2f} кг/седмица, а целта е поддържане (предложение: {delta:+d} кал.).",
+        "partial_days": " {n} от последните {total} дни са само частично записани, затова не влизат в средните стойности, вместо да се броят като малко ядене.",
         "adherence_gap": "Средно изяждаш {avg} кал. при цел {goal} кал. ({pct:.0f}%) — по-важно е да намалиш тази разлика, отколкото допълнително да вдигаме целта.",
-        "protein_gap": "Приемът на протеин е средно {avg}г при цел {goal}г ({pct:.0f}%) — си струва да се приоритизира, защото пази мускулите по време на качване.",
+        "protein_gap": "Приемът на протеин е средно {avg}г при цел {goal}г ({pct:.0f}%) — си струва да се приоритизира, защото пази мускулите.",
         "macro_context": " Приемът на {macro} също е средно {avg}г при цел {goal}г ({pct:.0f}%).",
         "below_threshold": " Нетната промяна ({delta:+d} кал.) е под прага от {threshold} кал. за прилагане — няма промяна.",
         "cooldown": " Целта щеше да се промени с {delta:+d} кал., но последната автоматична промяна е била преди по-малко от {days} дни — пропуснато засега.",
         "toggle_off": " Целта щеше да се промени с {delta:+d} кал., но „Автоматично прилагане на целите“ е изключено в Настройки — няма промяна.",
+        "manual_only": " Целта щеше да се промени с {delta:+d} кал. — автоматични промени има само при цел качване на тегло, затова прегледай това в раздел План.",
         "committed": " Целта е променена от {old} на {new} кал.",
         "no_findings": "Оценено — не се задейства правило за промяна.",
     },
@@ -389,16 +446,20 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
         end = tzutil.today_local()
         start = end - timedelta(days=nutrition.ADAPTIVE_LOOKBACK_DAYS - 1)
         entries = db.get_entries_between(conn, user_id, start.isoformat(), end.isoformat())
+        marks = db.get_day_marks(conn, user_id, start.isoformat(), end.isoformat())
         goals = db.get_goals(conn, user_id)
         profile = db.get_profile(conn, user_id)
         if not goals:
             return
+        goal_type = profile.get("goal_type") if profile else None
 
-        daily_macros = _daily_macro_totals(entries)
+        daily_macros = _daily_macro_totals(entries, marks)
         daily_calories = [(d, m["calories"]) for d, m in daily_macros]
-        result = nutrition.calculate_adaptive_tdee(daily_calories, weight_entries)
+        result = nutrition.calculate_adaptive_tdee(daily_calories, weight_entries, goal_type=goal_type)
         if result["insufficient_data"]:
             return  # not enough data to say anything meaningful — do nothing, not even a log
+        tracking = _tracking_summary(entries, marks, date.fromisoformat(result["window_start"]),
+                                      date.fromisoformat(result["window_end"]))
 
         suggestions = result["suggestions"]
         goal_calories = goals["calories"]
@@ -434,12 +495,17 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
                 findings.append(fat_spike_msg)
             elif s["type"] == "on_track":
                 findings.append(msgs["on_track"].format(
-                    v=s["weight_velocity_kg_week"], min=nutrition.ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK,
-                    max=nutrition.ADJUSTMENT_SWEET_SPOT_MAX_KG_WEEK))
+                    v=s["weight_velocity_kg_week"], min=s["range_min"], max=s["range_max"]))
+            elif s["type"] in ("lose_stalled", "lose_too_fast", "maintain_drift_up", "maintain_drift_down"):
+                effective_suggestions.append(s)
+                findings.append(msgs[s["type"]].format(v=s["weight_velocity_kg_week"], delta=s["calorie_delta"]))
 
         if adherence_gap:
             findings.append(msgs["adherence_gap"].format(
                 avg=result["avg_daily_intake"], goal=goal_calories, pct=calorie_adherence_pct * 100))
+
+        if tracking["partial_days"] >= 2:
+            findings.append(msgs["partial_days"].format(n=tracking["partial_days"], total=tracking["window_days"]))
 
         # Protein gets its own finding regardless of which weight-trend rule fired — under-
         # eating it undermines a gain phase even when total calories look fine.
@@ -467,7 +533,10 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
                 days_since = tzutil.now_local_naive() - datetime.fromisoformat(last_commit["created_at"])
                 cooldown_active = days_since < timedelta(days=nutrition.AUTO_ADJUST_COOLDOWN_DAYS)
 
-            if cooldown_active:
+            if goal_type != "gain":
+                # Silent auto-commit was only ever designed and tuned for the weight-gain goal.
+                reason_text += msgs["manual_only"].format(delta=total_delta)
+            elif cooldown_active:
                 reason_text += msgs["cooldown"].format(delta=total_delta, days=nutrition.AUTO_ADJUST_COOLDOWN_DAYS)
             elif not goals.get("auto_apply_targets", 1):
                 reason_text += msgs["toggle_off"].format(delta=total_delta)
@@ -483,7 +552,10 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
         # adherence-gap finding (which can recur every single weigh-in) doesn't call the
         # API daily — only a real commit, a fat-spike, or an adherence gap is worth asking
         # for one at all, and even then at most once every COACH_NOTE_MIN_INTERVAL_DAYS.
-        worth_noting = committed or adherence_gap or any(s["type"] == "fat_spike" for s in effective_suggestions)
+        # The coach prompt is written for a gain-phase user, so non-gain goals get only the
+        # deterministic reason_text — no AI note.
+        worth_noting = goal_type == "gain" and (
+            committed or adherence_gap or any(s["type"] == "fat_spike" for s in effective_suggestions))
         note_due = True
         last_note = db.get_last_coach_note(conn, user_id)
         if last_note:
@@ -494,7 +566,8 @@ def evaluate_and_auto_adjust_user(conn, user_id: int, lang: str = "bg") -> None:
         if worth_noting and note_due:
             try:
                 coach_note = coach.generate_analyst_note({
-                    "goal_type": profile.get("goal_type") if profile else None,
+                    "goal_type": goal_type,
+                    "tracking": tracking,
                     "weight_velocity_kg_week": result["weight_velocity_kg_week"],
                     "elapsed_days": result["elapsed_days"],
                     "avg_daily_intake": result["avg_daily_intake"],
@@ -599,18 +672,48 @@ def history(days: int = 14, user_id: int = Depends(current_user_id)):
     start = end - timedelta(days=days - 1)
     with db.get_conn() as conn:
         entries = db.get_entries_between(conn, user_id, start.isoformat(), end.isoformat())
+        marks = db.get_day_marks(conn, user_id, start.isoformat(), end.isoformat())
 
-    by_day: dict[str, list[dict]] = {}
-    for e in entries:
-        day_key = e["created_at"][:10]
-        by_day.setdefault(day_key, []).append(e)
+    by_day = _entries_by_day(entries)
 
     days_out = []
     for i in range(days):
         d = (start + timedelta(days=i)).isoformat()
         day_entries = by_day.get(d, [])
-        days_out.append({"date": d, "totals": _totals(day_entries), "entry_count": len(day_entries)})
+        days_out.append({
+            "date": d, "totals": _totals(day_entries), "entry_count": len(day_entries),
+            "status": _day_status(day_entries, marks.get(d)), "mark": marks.get(d),
+        })
     return {"days": days_out}
+
+
+def _day_status(day_entries: list[dict], mark: str | None) -> str:
+    """complete | partial | skipped | empty — what the UI shows for a day. "empty" and
+    "partial"/"skipped" are all unknown-not-zero as far as the analyst is concerned."""
+    if mark == "skip":
+        return "skipped"
+    if not day_entries:
+        return "empty"
+    return "complete" if _day_is_complete(day_entries, mark) else "partial"
+
+
+@app.put("/api/days/{day}/mark")
+def set_day_mark(day: str, payload: dict, user_id: int = Depends(current_user_id)):
+    """Explicitly tell the analyst how to treat a day: "complete" (this was everything I
+    ate), "skip" (I didn't track this day — leave it out), or null (back to inferred)."""
+    try:
+        parsed = date.fromisoformat(day)
+    except ValueError:
+        raise HTTPException(400, "day must be YYYY-MM-DD")
+    if parsed > tzutil.today_local():
+        raise HTTPException(400, "can't mark a day in the future")
+    status = payload.get("status")
+    if status not in ("complete", "skip", None):
+        raise HTTPException(400, "status must be 'complete', 'skip', or null")
+    with db.get_conn() as conn:
+        db.set_day_mark(conn, user_id, day, status)
+        day_entries = db.get_entries_for_date(conn, user_id, day)
+    return {"day": day, "mark": status, "status": _day_status(day_entries, status)}
 
 
 @app.get("/api/entries/{entry_id}")
@@ -860,10 +963,16 @@ def adaptive_tdee(user_id: int = Depends(current_user_id)):
         end = tzutil.today_local()
         start = end - timedelta(days=nutrition.ADAPTIVE_LOOKBACK_DAYS - 1)
         entries = db.get_entries_between(conn, user_id, start.isoformat(), end.isoformat())
+        marks = db.get_day_marks(conn, user_id, start.isoformat(), end.isoformat())
         goals = db.get_goals(conn, user_id)
+        profile = db.get_profile(conn, user_id)
 
-    daily_calories = _daily_calorie_totals(entries)
-    result = nutrition.calculate_adaptive_tdee(daily_calories, weight_entries)
+    goal_type = profile.get("goal_type") if profile else None
+    daily_calories = _daily_calorie_totals(entries, marks)
+    result = nutrition.calculate_adaptive_tdee(daily_calories, weight_entries, goal_type=goal_type)
+    result["goal_type"] = goal_type
+    window_start = date.fromisoformat(result["window_start"]) if not result["insufficient_data"] else start
+    result["tracking"] = _tracking_summary(entries, marks, window_start, end)
 
     if not result["insufficient_data"] and goals:
         protein_g, fat_g = goals["protein_g"], goals["fat_g"]

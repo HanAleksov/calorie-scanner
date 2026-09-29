@@ -99,3 +99,12 @@ CREATE TABLE IF NOT EXISTS analyst_logs (
     reason_text TEXT NOT NULL,  -- deterministic, localized fallback — always present
     coach_note TEXT             -- AI-generated "what/why/how" note, only on noteworthy events
 );
+
+-- Explicit "this day is (not) a full record" marks. Without a row, completeness is inferred
+-- from the entries themselves (see main._day_is_complete).
+CREATE TABLE IF NOT EXISTS day_marks (
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    day TEXT NOT NULL,             -- YYYY-MM-DD
+    status TEXT NOT NULL,          -- complete | skip
+    PRIMARY KEY (user_id, day)
+);

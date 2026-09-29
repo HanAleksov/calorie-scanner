@@ -157,7 +157,23 @@ const TRANSLATIONS = {
     tdee_insufficient_data: "Not enough data yet — log your weight and meals for at least {min_days} more days to unlock this.",
     tdee_insufficient_reason_no_weight_history: "No weigh-ins logged yet.",
     tdee_insufficient_reason_insufficient_weight_span: "Only {days} of {min_days} days of weigh-in history so far.",
-    tdee_insufficient_reason_insufficient_intake_logging: "Meals need to be logged more consistently — only {logged_days} of {days} days tracked so far.",
+    tdee_insufficient_reason_insufficient_intake_logging: "Meals need to be logged more consistently — only {logged_days} of {days} days are fully tracked so far. A day counts once it has 3 different meals, or once you tap \"That's everything\" on it.",
+    tdee_tracking_note: "{complete} of the last {total} days were fully logged and used. Partly-logged days ({partial}) are left out on purpose — they aren't counted as low eating.",
+    tdee_adaptive_explain_maintain:
+      "Based on {days} days of weigh-ins and logged meals, your real maintenance is about {real_tdee} kcal/day — " +
+      "you've been trending {direction} at {velocity}kg/week. Eating at maintenance suggests {suggested_calories} kcal/day.",
+    tdee_adaptive_explain_deficit:
+      "Based on {days} days of weigh-ins and logged meals, your real maintenance is about {real_tdee} kcal/day — " +
+      "you've been trending {direction} at {velocity}kg/week. Subtracting a {buffer} kcal deficit suggests " +
+      "{suggested_calories} kcal/day.",
+    day_mark_btn: "That's everything for today",
+    day_mark_confirmed: "Counted as a full day — tap to undo",
+    day_mark_inferred: "Counted as a full day",
+    day_mark_hint_partial: "Only a few meals logged — this day is left out of the analysis until you confirm it's everything.",
+    day_status_partial: "partial",
+    day_status_skipped: "skipped",
+    day_status_confirmed: "confirmed",
+    day_status_tap_hint: "Tap to change how the analysis counts this day",
 
     scale_optional_fields_label: "+ Add body composition (optional)",
     fat_mass_kg_label: "Fat mass (kg)",
@@ -165,7 +181,11 @@ const TRANSLATIONS = {
     water_pct_label: "Water (%)",
     suggestion_under_fueled: "Gain rate has stalled ({weight_delta}kg over {days} days) — increase your target by {delta} kcal?",
     suggestion_fat_spike: "Most of your recent gain has been fat, not muscle — trim your target by {delta} kcal?",
-    suggestion_on_track: "On track — gain rate is in the target range, no change needed.",
+    suggestion_on_track: "On track — your weight trend is in the target range, no change needed.",
+    suggestion_lose_stalled: "Weight has stopped dropping ({weight_delta}kg over {days} days) — trim your target by {delta} kcal?",
+    suggestion_lose_too_fast: "You're losing weight faster than is sustainable ({weight_delta}kg over {days} days) — raise your target by {delta} kcal?",
+    suggestion_maintain_drift_up: "Weight is creeping up ({weight_delta}kg over {days} days) — trim your target by {delta} kcal?",
+    suggestion_maintain_drift_down: "Weight is creeping down ({weight_delta}kg over {days} days) — raise your target by {delta} kcal?",
     apply_suggestion_btn: "Apply",
     ignore_suggestion_btn: "Ignore",
     suggestion_applied_toast: "Target adjusted",
@@ -393,7 +413,24 @@ const TRANSLATIONS = {
     tdee_insufficient_data: "Все още няма достатъчно данни — записвай тегло и хранения поне още {min_days} дни, за да отключиш това.",
     tdee_insufficient_reason_no_weight_history: "Все още няма записано тегло.",
     tdee_insufficient_reason_insufficient_weight_span: "Само {days} от {min_days} дни история с тегло досега.",
-    tdee_insufficient_reason_insufficient_intake_logging: "Храненията трябва да се записват по-последователно — само {logged_days} от {days} дни са проследени досега.",
+    tdee_insufficient_reason_insufficient_intake_logging: "Храненията трябва да се записват по-последователно — само {logged_days} от {days} дни са напълно проследени досега. Денят се брои, когато има 3 различни хранения или когато натиснеш „Това беше всичко“ за него.",
+    tdee_tracking_note: "{complete} от последните {total} дни са напълно записани и са използвани. Частично записаните дни ({partial}) са оставени навън нарочно — не се броят като малко ядене.",
+    tdee_adaptive_explain_maintain:
+      "На база {days} дни с измерено тегло и записани хранения, реалните ти поддържащи калории са около " +
+      "{real_tdee} кал./ден — тенденцията ти е {direction} с {velocity} кг/седмица. За поддържане " +
+      "препоръчителните калории са {suggested_calories} кал./ден.",
+    tdee_adaptive_explain_deficit:
+      "На база {days} дни с измерено тегло и записани хранения, реалните ти поддържащи калории са около " +
+      "{real_tdee} кал./ден — тенденцията ти е {direction} с {velocity} кг/седмица. Изваждайки дефицит от " +
+      "{buffer} кал., препоръчителните калории са {suggested_calories} кал./ден.",
+    day_mark_btn: "Това беше всичко за днес",
+    day_mark_confirmed: "Брои се като пълен ден — натисни за отмяна",
+    day_mark_inferred: "Брои се като пълен ден",
+    day_mark_hint_partial: "Записани са само няколко хранения — този ден не влиза в анализа, докато не потвърдиш, че това е всичко.",
+    day_status_partial: "непълен",
+    day_status_skipped: "пропуснат",
+    day_status_confirmed: "потвърден",
+    day_status_tap_hint: "Натисни, за да промениш как анализът брои този ден",
 
     scale_optional_fields_label: "+ Добави телесен състав (по избор)",
     fat_mass_kg_label: "Мастна маса (кг)",
@@ -401,7 +438,11 @@ const TRANSLATIONS = {
     water_pct_label: "Вода (%)",
     suggestion_under_fueled: "Темпото на качване спря ({weight_delta}кг за {days} дни) — да увелича ли целта с {delta} кал.?",
     suggestion_fat_spike: "По-голямата част от скорошното качване е мазнини, не мускул — да намаля ли целта с {delta} кал.?",
-    suggestion_on_track: "Всичко е наред — темпото на качване е в целевия диапазон, няма нужда от промяна.",
+    suggestion_on_track: "Всичко е наред — тенденцията на теглото ти е в целевия диапазон, няма нужда от промяна.",
+    suggestion_lose_stalled: "Теглото е спряло да намалява ({weight_delta}кг за {days} дни) — да намаля ли целта с {delta} кал.?",
+    suggestion_lose_too_fast: "Отслабваш по-бързо, отколкото е устойчиво ({weight_delta}кг за {days} дни) — да увелича ли целта с {delta} кал.?",
+    suggestion_maintain_drift_up: "Теглото леко се качва ({weight_delta}кг за {days} дни) — да намаля ли целта с {delta} кал.?",
+    suggestion_maintain_drift_down: "Теглото леко пада ({weight_delta}кг за {days} дни) — да увелича ли целта с {delta} кал.?",
     apply_suggestion_btn: "Приложи",
     ignore_suggestion_btn: "Пропусни",
     suggestion_applied_toast: "Целта е коригирана",

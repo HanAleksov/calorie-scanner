@@ -54,7 +54,7 @@ def generate_tip(context: dict, lang: str = "en") -> str:
 
     response = client.messages.create(
         model=MODEL,
-        max_tokens=500,
+        max_tokens=2000,  # Sonnet 5 thinks by default; thinking tokens count against this
         system=system,
         output_config={"format": {"type": "json_schema", "schema": RESPONSE_SCHEMA}},
         messages=[{"role": "user", "content": prompt}],
@@ -94,6 +94,13 @@ if protein is running low, mention it's worth prioritizing since it protects mus
 phase; if a fat-mass finding lines up with fat intake also running high, it's fine to connect the two.
 Don't recite every number just because you have it — one relevant macro callout is plenty.
 
+You'll also be told how many of the analysed days were fully logged. Days that were only partly
+logged are left out of the averages on purpose, so a low average is NOT evidence they ate little —
+never treat missing or partial logging as under-eating. If a fair number of days were partial or
+empty, mention once, lightly, that the picture is fuzzier when meals go unlogged and that tapping
+"that was everything" on a fully-logged day (or skipping a day they didn't track) keeps the numbers
+honest. Don't nag about it if logging looks solid.
+
 If a target was actually changed, say so plainly in your own words and say why in one clause — never
 use clinical/robotic phrasing like "delta," "kcal threshold," or "commit." Write like a person talking
 to a friend, not a formula printing a log line."""
@@ -108,7 +115,8 @@ ANALYST_NOTE_SCHEMA = {
 
 def generate_analyst_note(context: dict, lang: str = "en") -> str:
     """context keys: goal_type, weight_velocity_kg_week, elapsed_days, avg_daily_intake,
-    goal_calories, intake_adherence_pct, adherence (nutrition.calculate_macro_adherence()'s
+    goal_calories, intake_adherence_pct, tracking ({window_days, complete_days, partial_days,
+    empty_days} — how much of the window is usable data), adherence (nutrition.calculate_macro_adherence()'s
     output — per-field {avg, goal, pct, status} for calories/protein_g/carbs_g/fat_g, lets the
     note reference any macro specifically, not just calories), findings (list of short
     plain-English fact strings), adherence_gap (bool), committed (bool), old_calories/
@@ -123,8 +131,18 @@ def generate_analyst_note(context: dict, lang: str = "en") -> str:
         if m:
             macro_lines.append(f"{label}: averaging {m['avg']}g against a {m['goal']}g target ({m['status']}).")
 
+    tracking = context.get("tracking")
+    tracking_line = []
+    if tracking:
+        tracking_line.append(
+            f"Logging coverage: {tracking['complete_days']} of {tracking['window_days']} days fully logged "
+            f"({tracking['partial_days']} only partly logged, {tracking['empty_days']} with nothing logged) — "
+            f"the intake averages below use only the fully-logged days."
+        )
+
     lines = [
         f"Goal type: {context.get('goal_type') or 'not set'}.",
+        *tracking_line,
         f"Weight velocity: {context['weight_velocity_kg_week']:+.2f} kg/week over {context['elapsed_days']} days.",
         f"Logged intake averages {context['avg_daily_intake']} kcal/day against a {context['goal_calories']} kcal "
         f"target ({context['intake_adherence_pct'] * 100:.0f}%).",
@@ -141,7 +159,7 @@ def generate_analyst_note(context: dict, lang: str = "en") -> str:
     try:
         response = client.messages.create(
             model=MODEL,
-            max_tokens=500,
+            max_tokens=4000,  # Sonnet 5 thinks by default (measured 450-1000+ total tokens for a ~200-token note in Bulgarian)
             system=system,
             output_config={"format": {"type": "json_schema", "schema": ANALYST_NOTE_SCHEMA}},
             messages=[{"role": "user", "content": prompt}],

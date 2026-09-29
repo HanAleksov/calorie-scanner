@@ -77,7 +77,8 @@ ADAPTIVE_MIN_ELAPSED_DAYS = 10       # earliest the engine will report a number 
 ADAPTIVE_MIN_INTAKE_COVERAGE = 0.7   # fraction of elapsed days needing a logged
                                       # total_calories > 0 for the intake average to be trusted
 EWMA_ALPHA = 0.2                     # ~9-day half-life smoothing of daily weight noise
-ADAPTIVE_SURPLUS_BUFFER_KCAL = 400
+ADAPTIVE_SURPLUS_BUFFER_KCAL = 400   # "gain" default; other goals resolve via SURPLUS_BUFFER_BY_GOAL
+SURPLUS_BUFFER_BY_GOAL = {"gain": 400, "maintain": 0, "lose": -500}
 
 # ---------- Scale-based adjustment suggestions ----------
 # Velocity thresholds are specified in kg/week (matches how a hardgainer target is usually
@@ -92,6 +93,22 @@ ADJUSTMENT_FAT_SPIKE_DELTA_KCAL = -100
 ADJUSTMENT_MIN_FAT_MASS_READINGS = 2
 ADJUSTMENT_PROTEIN_FLOOR_G = 135  # held as a minimum (never lowered) when trimming for a fat spike
 ADJUSTMENT_FAT_FLOOR_G = 40       # sane floor so an automated fat-priority cut can't zero out fat
+
+# Non-"gain" goals get their own velocity rules (kg/week, negative = losing). Without these the
+# gain-shaped rules misread a lose-goal user who is losing exactly as intended as "under-fueled".
+ADJUSTMENT_LOSE_STALLED_ABOVE_KG_WEEK = -0.15      # losing slower than this (or gaining) = stalled
+ADJUSTMENT_LOSE_TOO_FAST_BELOW_KG_WEEK = -1.0      # losing faster than this = too aggressive
+ADJUSTMENT_LOSE_SWEET_SPOT_KG_WEEK = (-0.9, -0.25)
+ADJUSTMENT_LOSE_DELTA_KCAL = 150
+ADJUSTMENT_MAINTAIN_DRIFT_KG_WEEK = 0.25           # |velocity| above this = drifting off maintenance
+ADJUSTMENT_MAINTAIN_STABLE_KG_WEEK = 0.15
+ADJUSTMENT_MAINTAIN_DELTA_KCAL = 100
+
+# A day only counts toward intake averages when it plausibly holds a full day of food, not one
+# logged snack. Judged by how many distinct meal types were logged (not by calories, so a
+# genuinely low-eating day is still counted and can still reveal real under-eating), unless
+# the user explicitly marked the day (see main._day_is_complete).
+COMPLETE_DAY_MIN_MEAL_TYPES = 3
 
 # ---------- Autonomous auto-adjustment engine ----------
 AUTO_ADJUST_MIN_COMMIT_KCAL = 50   # a computed change smaller than this is noise, not a decision
@@ -195,29 +212,48 @@ def ewma_weight_trend(weight_entries: list, as_of: date | None = None,
 
 
 def _evaluate_adjustment_rules(weight_delta_kg: float, weight_entries: list,
-                                effective_start: date, as_of: date, elapsed_days: int) -> list:
+                                effective_start: date, as_of: date, elapsed_days: int,
+                                goal_type: str | None = "gain") -> list:
     """Scale-driven "should we nudge the target" checks, evaluated over the same window
     calculate_adaptive_tdee already computed. Never raises on missing/sparse data — a
-    rule that can't be evaluated (e.g. no fat_mass_kg logged) simply doesn't fire."""
+    rule that can't be evaluated (e.g. no fat_mass_kg logged) simply doesn't fire.
+    Rules depend on goal_type: only "gain" has the under-fueled/fat-spike logic; "lose" and
+    "maintain" (and unset, treated as maintain) have their own velocity checks."""
     suggestions = []
     weight_velocity_kg_week = (weight_delta_kg / elapsed_days) * 7 if elapsed_days else 0.0
+    base = {"weight_delta_kg": round(weight_delta_kg, 2),
+            "weight_velocity_kg_week": round(weight_velocity_kg_week, 3)}
+    v = weight_velocity_kg_week
+
+    if goal_type == "lose":
+        lo, hi = ADJUSTMENT_LOSE_SWEET_SPOT_KG_WEEK
+        if v > ADJUSTMENT_LOSE_STALLED_ABOVE_KG_WEEK:
+            suggestions.append({"type": "lose_stalled", "calorie_delta": -ADJUSTMENT_LOSE_DELTA_KCAL, **base})
+        elif v < ADJUSTMENT_LOSE_TOO_FAST_BELOW_KG_WEEK:
+            suggestions.append({"type": "lose_too_fast", "calorie_delta": ADJUSTMENT_LOSE_DELTA_KCAL, **base})
+        elif lo <= v <= hi:
+            suggestions.append({"type": "on_track", "calorie_delta": 0, "range_min": lo, "range_max": hi, **base})
+        return suggestions
+
+    if goal_type != "gain":  # "maintain" or not set
+        if v > ADJUSTMENT_MAINTAIN_DRIFT_KG_WEEK:
+            suggestions.append({"type": "maintain_drift_up", "calorie_delta": -ADJUSTMENT_MAINTAIN_DELTA_KCAL, **base})
+        elif v < -ADJUSTMENT_MAINTAIN_DRIFT_KG_WEEK:
+            suggestions.append({"type": "maintain_drift_down", "calorie_delta": ADJUSTMENT_MAINTAIN_DELTA_KCAL, **base})
+        elif abs(v) <= ADJUSTMENT_MAINTAIN_STABLE_KG_WEEK:
+            suggestions.append({"type": "on_track", "calorie_delta": 0,
+                                "range_min": -ADJUSTMENT_MAINTAIN_STABLE_KG_WEEK,
+                                "range_max": ADJUSTMENT_MAINTAIN_STABLE_KG_WEEK, **base})
+        return suggestions
 
     if weight_velocity_kg_week < ADJUSTMENT_UNDER_FUELED_MIN_VELOCITY_KG_WEEK:
-        suggestions.append({
-            "type": "under_fueled",
-            "calorie_delta": ADJUSTMENT_UNDER_FUELED_DELTA_KCAL,
-            "weight_delta_kg": round(weight_delta_kg, 2),
-            "weight_velocity_kg_week": round(weight_velocity_kg_week, 3),
-        })
+        suggestions.append({"type": "under_fueled", "calorie_delta": ADJUSTMENT_UNDER_FUELED_DELTA_KCAL, **base})
     elif ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK <= weight_velocity_kg_week <= ADJUSTMENT_SWEET_SPOT_MAX_KG_WEEK:
         # In the target range — an explicit "no change" signal rather than silence, so the
         # caller (and the Analyst Feed) can say *why* nothing moved instead of showing nothing.
-        suggestions.append({
-            "type": "on_track",
-            "calorie_delta": 0,
-            "weight_delta_kg": round(weight_delta_kg, 2),
-            "weight_velocity_kg_week": round(weight_velocity_kg_week, 3),
-        })
+        suggestions.append({"type": "on_track", "calorie_delta": 0,
+                            "range_min": ADJUSTMENT_SWEET_SPOT_MIN_KG_WEEK,
+                            "range_max": ADJUSTMENT_SWEET_SPOT_MAX_KG_WEEK, **base})
 
     # Bucket ALL fat_mass_kg readings (not just those inside the scored window) so the
     # EWMA gets the same ADAPTIVE_LOOKBACK_DAYS warmup buffer the main weight trend gets —
@@ -282,12 +318,16 @@ def apply_calorie_adjustment(goals: dict, calorie_delta: int, prioritize_carbs: 
 
 
 def calculate_adaptive_tdee(daily_calories: list, weight_entries: list,
-                             surplus_buffer_kcal: int = ADAPTIVE_SURPLUS_BUFFER_KCAL,
-                             as_of: date | None = None) -> dict:
-    """daily_calories: list of (date, total_kcal) tuples, one per day that has at least
-    one logged meal (days with nothing logged are simply absent, not zero).
-    weight_entries: rows from db.get_weight_log."""
+                             surplus_buffer_kcal: int | None = None,
+                             as_of: date | None = None, goal_type: str | None = "gain") -> dict:
+    """daily_calories: list of (date, total_kcal) tuples, one per day the caller trusts as a
+    full record of that day's eating. Days with nothing logged, or only partially logged,
+    must be absent — not zero and not a low number (main._daily_macro_totals does this).
+    weight_entries: rows from db.get_weight_log. surplus_buffer_kcal defaults per goal_type
+    (SURPLUS_BUFFER_BY_GOAL); goal_type also picks which adjustment rules apply."""
     as_of = as_of or tzutil.today_local()
+    if surplus_buffer_kcal is None:
+        surplus_buffer_kcal = SURPLUS_BUFFER_BY_GOAL.get(goal_type, 0)
     series = ewma_weight_trend(weight_entries, as_of=as_of)
     if not series:
         return {
@@ -350,7 +390,7 @@ def calculate_adaptive_tdee(daily_calories: list, weight_entries: list,
         "window_start": effective_start.isoformat(),
         "window_end": as_of.isoformat(),
         "method": "EWMA-smoothed weight trend vs. logged intake over the trailing window",
-        "suggestions": _evaluate_adjustment_rules(weight_delta_kg, weight_entries, effective_start, as_of, elapsed_days),
+        "suggestions": _evaluate_adjustment_rules(weight_delta_kg, weight_entries, effective_start, as_of, elapsed_days, goal_type),
     }
 
 

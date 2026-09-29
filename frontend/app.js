@@ -381,7 +381,45 @@ async function loadToday() {
   renderEntries(data.entries);
   renderWater(data.water_ml, data.goals.water_ml);
   renderGapRecommender(data.totals.calories, data.goals.calories);
+  renderDayMark(data);
   loadCachedTip();
+}
+
+// ---------- Day completeness ----------
+// The analyst only counts a day toward intake averages when it's a full record: 3+ distinct
+// meal types, or the user explicitly confirmed it. A day with one snack is *unknown*, not
+// "ate 700 kcal" — this row is how the user tells the app "that was everything".
+async function setDayMark(day, status) {
+  const res = await apiFetch(`/api/days/${day}/mark`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  return res.ok;
+}
+
+function renderDayMark(data) {
+  const row = $("dayMarkRow");
+  if (!data.entries.length) {
+    row.hidden = true;
+    return;
+  }
+  row.hidden = false;
+  if (data.day_mark === "complete") {
+    row.innerHTML = `<div class="day-mark-state"><button id="dayMarkUndoBtn">✓ ${t("day_mark_confirmed")}</button></div>`;
+    $("dayMarkUndoBtn").addEventListener("click", async () => {
+      if (await setDayMark(data.date, null)) loadToday();
+    });
+  } else if (data.day_status === "complete") {
+    row.innerHTML = `<div class="day-mark-state">✓ ${t("day_mark_inferred")}</div>`;
+  } else {
+    row.innerHTML = `
+      <p class="day-mark-hint">${t("day_mark_hint_partial")}</p>
+      <button class="btn btn-secondary" id="dayMarkBtn" style="width:100%">${t("day_mark_btn")}</button>`;
+    $("dayMarkBtn").addEventListener("click", async () => {
+      if (await setDayMark(data.date, "complete")) loadToday();
+    });
+  }
 }
 
 // ---------- Target Gap Recommender (evening, gain-goal only) ----------
@@ -836,14 +874,32 @@ async function loadHistory() {
       const pct = Math.round((d.totals.calories / max) * 100);
       const locale = currentLang() === "bg" ? "bg-BG" : undefined;
       const label = new Date(d.date + "T00:00:00").toLocaleDateString(locale, { month: "short", day: "numeric" });
+      // A day with nothing logged is *unknown*, not zero — show a dash, not an empty 0 bar.
+      // Partial/skipped days are shown but visually dimmed, since the analyst ignores them.
+      const unknown = d.status !== "complete";
+      const kcalText = d.status === "empty" ? "—" : d.totals.calories;
+      let chip = `<span class="day-status-chip placeholder"></span>`;
+      if (d.status === "partial" || d.status === "skipped") {
+        chip = `<button class="day-status-chip" data-day="${d.date}" data-next="${d.status === "partial" ? "complete" : "clear"}" title="${t("day_status_tap_hint")}">${t("day_status_" + d.status)}</button>`;
+      } else if (d.status === "complete" && d.mark === "complete") {
+        chip = `<button class="day-status-chip confirmed" data-day="${d.date}" data-next="skip" title="${t("day_status_tap_hint")}">${t("day_status_confirmed")}</button>`;
+      }
       return `
-        <div class="history-day">
+        <div class="history-day ${unknown ? "is-unknown" : ""}">
           <div class="date">${label}</div>
-          <div class="bar-track"><div class="fill" style="width:${pct}%"></div></div>
-          <div class="kcal">${d.totals.calories}</div>
+          <div class="bar-track"><div class="fill" style="width:${d.status === "empty" ? 0 : pct}%"></div></div>
+          <div class="kcal">${kcalText}</div>
+          ${chip}
         </div>`;
     })
     .join("");
+  // Tap cycle: partial -> confirmed complete -> skipped -> back to inferred.
+  $("historyList").querySelectorAll("button.day-status-chip").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const status = btn.dataset.next === "clear" ? null : btn.dataset.next;
+      if (await setDayMark(btn.dataset.day, status)) loadHistory();
+    })
+  );
   loadWeightLog();
 }
 
@@ -1175,7 +1231,19 @@ const SUGGESTION_MESSAGE_KEY = {
   under_fueled: "suggestion_under_fueled",
   fat_spike: "suggestion_fat_spike",
   on_track: "suggestion_on_track",
+  lose_stalled: "suggestion_lose_stalled",
+  lose_too_fast: "suggestion_lose_too_fast",
+  maintain_drift_up: "suggestion_maintain_drift_up",
+  maintain_drift_down: "suggestion_maintain_drift_down",
 };
+
+function trackingNoteHtml(data) {
+  const tr = data.tracking;
+  if (!tr || !tr.partial_days) return "";
+  return `<p class="explain-text">${t("tdee_tracking_note", {
+    complete: tr.complete_days, total: tr.window_days, partial: tr.partial_days,
+  })}</p>`;
+}
 
 function renderAdaptiveTdee(data) {
   const el = $("adaptiveTdeeResult");
@@ -1183,7 +1251,8 @@ function renderAdaptiveTdee(data) {
     const reasonKey = `tdee_insufficient_reason_${data.reason}`;
     el.innerHTML = `
       <p class="explain-text">${t("tdee_insufficient_data", { min_days: data.min_days_required })}</p>
-      <p class="explain-text">${t(reasonKey, { days: data.elapsed_days, min_days: data.min_days_required, logged_days: data.days_with_intake_logged })}</p>`;
+      <p class="explain-text">${t(reasonKey, { days: data.elapsed_days, min_days: data.min_days_required, logged_days: data.days_with_intake_logged })}</p>
+      ${trackingNoteHtml(data)}`;
     return;
   }
   state.lastAdaptiveTdee = data;
@@ -1214,14 +1283,18 @@ function renderAdaptiveTdee(data) {
       <div class="target-cell"><div class="target-value">${data.carbs_g}g</div><div class="target-label">${t("carbs")}</div></div>
       <div class="target-cell"><div class="target-value">${data.fat_g}g</div><div class="target-label">${t("fat")}</div></div>
     </div>
-    <p class="explain-text">${t("tdee_adaptive_explain", {
+    <p class="explain-text">${t(
+      data.surplus_buffer_kcal > 0 ? "tdee_adaptive_explain"
+        : data.surplus_buffer_kcal < 0 ? "tdee_adaptive_explain_deficit"
+        : "tdee_adaptive_explain_maintain", {
       days: data.elapsed_days,
       real_tdee: data.real_tdee,
       direction: data.weight_velocity_kg_week >= 0 ? t("direction_up") : t("direction_down"),
       velocity: Math.abs(data.weight_velocity_kg_week).toFixed(2),
-      buffer: data.surplus_buffer_kcal,
+      buffer: Math.abs(data.surplus_buffer_kcal),
       suggested_calories: data.suggested_calories,
     })}</p>
+    ${trackingNoteHtml(data)}
     <button class="btn btn-primary" id="applyAdaptiveTdeeBtn" style="width:100%">${t("tdee_adaptive_apply_btn")}</button>
     ${suggestionsHtml}`;
 

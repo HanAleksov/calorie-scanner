@@ -188,6 +188,7 @@ def delete_user(conn, user_id: int) -> None:
     conn.execute("DELETE FROM weight_log WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM favorites WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM analyst_logs WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM day_marks WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
 
@@ -493,3 +494,24 @@ def get_last_committed_adjustment(conn, user_id: int) -> dict | None:
         (user_id,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def get_day_marks(conn, user_id: int, start_date: str, end_date: str) -> dict:
+    """{ "YYYY-MM-DD": "complete" | "skip" } for explicitly-marked days in the range."""
+    rows = conn.execute(
+        "SELECT day, status FROM day_marks WHERE user_id = ? AND day BETWEEN ? AND ?",
+        (user_id, start_date, end_date),
+    ).fetchall()
+    return {r["day"]: r["status"] for r in rows}
+
+
+def set_day_mark(conn, user_id: int, day: str, status: str | None) -> None:
+    """status None clears the mark, returning that day to inferred completeness."""
+    if status is None:
+        conn.execute("DELETE FROM day_marks WHERE user_id = ? AND day = ?", (user_id, day))
+        return
+    conn.execute(
+        """INSERT INTO day_marks (user_id, day, status) VALUES (?, ?, ?)
+           ON CONFLICT(user_id, day) DO UPDATE SET status = excluded.status""",
+        (user_id, day, status),
+    )

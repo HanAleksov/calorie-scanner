@@ -1,6 +1,17 @@
-const CURRENT_APP_VERSION = 10;
+const CURRENT_APP_VERSION = 11;
 
 const WHATS_NEW = [
+  {
+    version: 11,
+    en: [
+      "🗓 Smarter with days you didn't fully log — a day with just one snack logged is no longer counted as \"you ate almost nothing\". Days only count toward the Analyst's averages once they have 3 different meals, or once you tap \"That's everything for today\". You can also fix past days in History.",
+      "🎯 The Analyst now understands your goal — weight-loss and maintenance users get rules that fit them, instead of gain-phase rules.",
+    ],
+    bg: [
+      "🗓 По-умно с дните, които не си записал докрай — ден с едно записано похапване вече не се брои за „почти не си ял“. Дните влизат в средните на Анализатора едва когато имат 3 различни хранения или когато натиснеш „Това беше всичко за днес“. Можеш да поправяш и минали дни в История.",
+      "🎯 Анализаторът вече разбира целта ти — при сваляне на тегло и поддържане правилата са съобразени с тях, а не с тези за качване.",
+    ],
+  },
   {
     version: 10,
     en: [

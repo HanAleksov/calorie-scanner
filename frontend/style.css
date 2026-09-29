@@ -527,3 +527,17 @@ nav.tabbar button.active { color: var(--accent); font-weight: 600; background: v
   animation: toastIn 0.2s ease;
 }
 @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%); } }
+
+/* Day completeness: whether the analyst treats a day as a full record of what was eaten */
+.day-mark-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.day-mark-row .day-mark-hint { font-size: 12px; color: var(--text-dim); line-height: 1.45; margin: 0 0 8px; }
+.day-mark-row .day-mark-state { font-size: 12.5px; color: var(--protein); display: flex; align-items: center; gap: 6px; }
+.day-mark-row .day-mark-state button { background: none; border: none; color: inherit; font: inherit; padding: 0; cursor: pointer; text-align: left; }
+.history-day.is-unknown .bar-track .fill { background: var(--text-dim); opacity: 0.35; }
+.history-day.is-unknown .kcal { color: var(--text-dim); font-weight: 500; }
+.history-day .day-status-chip {
+  flex-shrink: 0; width: 68px; box-sizing: border-box; text-align: center; font-size: 10.5px; padding: 3px 0; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); cursor: pointer; font-family: inherit;
+}
+.history-day .day-status-chip.confirmed { color: var(--protein); border-color: var(--protein); }
+.history-day .day-status-chip.placeholder { visibility: hidden; cursor: default; }

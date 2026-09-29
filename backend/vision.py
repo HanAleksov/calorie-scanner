@@ -270,7 +270,7 @@ def parse_scale_screenshot(image_bytes: bytes, media_type: str) -> dict:
     try:
         response = client.messages.create(
             model=MODEL,
-            max_tokens=512,
+            max_tokens=2048,  # thinking tokens count against this too
             system=[{"type": "text", "text": SCALE_SYSTEM_PROMPT}],
             output_config={"format": {"type": "json_schema", "schema": SCALE_RESPONSE_SCHEMA}},
             messages=[
