@@ -540,4 +540,6 @@ nav.tabbar button.active { color: var(--accent); font-weight: 600; background: v
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); cursor: pointer; font-family: inherit;
 }
 .history-day .day-status-chip.confirmed { color: var(--protein); border-color: var(--protein); }
+.history-day .day-status-chip.include { color: var(--accent); border-color: var(--accent); }
+.history-hint { font-size: 12px; color: var(--text-dim); line-height: 1.45; margin: 0 0 10px; }
 .history-day .day-status-chip.placeholder { visibility: hidden; cursor: default; }

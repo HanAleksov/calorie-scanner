@@ -867,7 +867,8 @@ async function loadHistory() {
   const res = await apiFetch("/api/history?days=14");
   const data = await res.json();
   const max = Math.max(1, ...data.days.map((d) => d.totals.calories));
-  $("historyList").innerHTML = data.days
+  const hasPartial = data.days.some((d) => d.status === "partial");
+  $("historyList").innerHTML = (hasPartial ? `<p class="history-hint">${t("history_partial_hint")}</p>` : "") + data.days
     .slice()
     .reverse()
     .map((d) => {
@@ -879,10 +880,13 @@ async function loadHistory() {
       const unknown = d.status !== "complete";
       const kcalText = d.status === "empty" ? "—" : d.totals.calories;
       let chip = `<span class="day-status-chip placeholder"></span>`;
-      if (d.status === "partial" || d.status === "skipped") {
-        chip = `<button class="day-status-chip" data-day="${d.date}" data-next="${d.status === "partial" ? "complete" : "clear"}" title="${t("day_status_tap_hint")}">${t("day_status_" + d.status)}</button>`;
+      if (d.status === "partial") {
+        // Primary action: the user really did eat little that day — count what's logged.
+        chip = `<button class="day-status-chip include" data-day="${d.date}" data-next="complete" title="${t("day_status_tap_hint")}">${t("day_status_include")}</button>`;
+      } else if (d.status === "skipped") {
+        chip = `<button class="day-status-chip" data-day="${d.date}" data-next="clear" title="${t("day_status_tap_hint")}">${t("day_status_skipped")}</button>`;
       } else if (d.status === "complete" && d.mark === "complete") {
-        chip = `<button class="day-status-chip confirmed" data-day="${d.date}" data-next="skip" title="${t("day_status_tap_hint")}">${t("day_status_confirmed")}</button>`;
+        chip = `<button class="day-status-chip confirmed" data-day="${d.date}" data-next="clear" title="${t("day_status_tap_hint")}">${t("day_status_confirmed")}</button>`;
       }
       return `
         <div class="history-day ${unknown ? "is-unknown" : ""}">
@@ -893,7 +897,7 @@ async function loadHistory() {
         </div>`;
     })
     .join("");
-  // Tap cycle: partial -> confirmed complete -> skipped -> back to inferred.
+  // Tap: partial -> counted (confirmed); confirmed/skipped -> back to inferred.
   $("historyList").querySelectorAll("button.day-status-chip").forEach((btn) =>
     btn.addEventListener("click", async () => {
       const status = btn.dataset.next === "clear" ? null : btn.dataset.next;

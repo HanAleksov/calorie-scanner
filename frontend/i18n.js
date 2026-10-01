@@ -171,8 +171,10 @@ const TRANSLATIONS = {
     day_mark_inferred: "Counted as a full day",
     day_mark_hint_partial: "Only a few meals logged — this day is left out of the analysis until you confirm it's everything.",
     day_status_partial: "partial",
+    day_status_include: "count it",
+    history_partial_hint: "Greyed-out days are partly logged and left out of the analysis. If you really did eat little that day, tap \"count it\" and it counts with what's logged.",
     day_status_skipped: "skipped",
-    day_status_confirmed: "confirmed",
+    day_status_confirmed: "counted",
     day_status_tap_hint: "Tap to change how the analysis counts this day",
 
     scale_optional_fields_label: "+ Add body composition (optional)",
@@ -428,8 +430,10 @@ const TRANSLATIONS = {
     day_mark_inferred: "Брои се като пълен ден",
     day_mark_hint_partial: "Записани са само няколко хранения — този ден не влиза в анализа, докато не потвърдиш, че това е всичко.",
     day_status_partial: "непълен",
+    day_status_include: "включи",
+    history_partial_hint: "Сивите дни са непълно записани и не влизат в анализа. Ако в такъв ден наистина си ял малко, натисни „включи“ и той се брои с каквото е записано.",
     day_status_skipped: "пропуснат",
-    day_status_confirmed: "потвърден",
+    day_status_confirmed: "включен",
     day_status_tap_hint: "Натисни, за да промениш как анализът брои този ден",
 
     scale_optional_fields_label: "+ Добави телесен състав (по избор)",
