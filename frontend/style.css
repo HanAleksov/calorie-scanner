@@ -736,6 +736,7 @@ nav.tabbar button.active::after {
 .sheet-text { margin: 0 0 14px; }
 .schedule-rows { display: flex; flex-direction: column; gap: 10px; }
 .schedule-row { display: grid; grid-template-columns: minmax(0, 1fr) 138px var(--touch); gap: 8px; align-items: center; }
+.schedule-row select { font-size: 15px; padding-left: 12px; padding-right: 8px; text-overflow: ellipsis; }
 .sr-remove { width: var(--touch); height: var(--touch); border-radius: 50%; border: none; background: var(--surface-2); color: var(--text-dim); display: grid; place-items: center; cursor: pointer; }
 .schedule-tools { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 .schedule-tools .btn { flex: 1 1 auto; }
