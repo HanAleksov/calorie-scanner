@@ -74,24 +74,25 @@
   <section class="tab-panel active" id="tab-today" aria-labelledby="screenTitle">
     <div class="card hero-card" id="heroCard">
       <div class="hero-grid">
-        <div class="hero-kcal">
-          <div class="ring-value" id="ringCalsLeft">0</div>
-          <div class="ring-label" data-i18n="kcal_left">kcal left</div>
+        <div class="hero-main">
+          <div class="hero-kcal">
+            <div class="ring-value" id="ringCalsLeft">0</div>
+            <div class="ring-label" data-i18n="kcal_left">kcal left</div>
+          </div>
+          <p class="hero-sub">
+            <span class="hero-sub-line"><span id="totalCals">0</span> <span data-i18n="eaten">eaten</span></span>
+            <span class="hero-sub-line"><span id="calGoalDisplay">2200</span> <span data-i18n="goal">goal</span></span>
+          </p>
         </div>
         <div class="legion-stage" id="legionStage" hidden>
           <div class="lg-portrait-wrap" id="legionPortrait" aria-hidden="true"></div>
-          <div class="lg-bubble" id="legionBubble" role="status" aria-live="polite">
-            <span class="lg-demo-tag" id="legionDemoTag" hidden data-i18n="legion_demo_tag">DEMO</span>
-            <span id="legionText"></span>
-          </div>
           <span class="lg-rank" data-i18n="legion_rank">Legionary</span>
         </div>
+        <div class="lg-bubble" id="legionBubble" role="status" aria-live="polite" hidden><span id="legionText"></span></div>
       </div>
       <div class="cal-bar" id="calBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-i18n-aria="kcal_progress">
         <div class="cal-bar-fill" id="calBarFill"></div>
       </div>
-      <p class="hero-sub"><span id="totalCals">0</span> <span data-i18n="eaten">eaten</span> · <span id="calGoalDisplay">2200</span> <span data-i18n="goal">goal</span></p>
-      <div class="lg-chips" id="legionChips"></div>
       <div class="macros">
         <div class="macro protein">
           <div class="label" data-i18n="protein">Protein</div>
@@ -111,21 +112,6 @@
       </div>
     </div>
 
-    <div class="demo-panel" id="legionDemo" hidden role="group" aria-labelledby="legionDemoLabel">
-      <div class="demo-head"><span class="demo-badge" id="legionDemoLabel" data-i18n="legion_demo_tag">DEMO</span><span class="demo-note" data-i18n="legion_demo_note">Preview of the centurion's reactions. Nothing here is recorded or tracked.</span></div>
-      <div class="demo-actions">
-        <button class="chip-btn" id="demoApprove" type="button" data-i18n="demo_approve">Approval</button>
-        <button class="chip-btn" id="demoRemind" type="button" data-i18n="demo_remind">Reminder</button>
-        <button class="chip-btn" id="demoDemand" type="button" data-i18n="demo_demand">Missing record</button>
-      </div>
-    </div>
-
-    <div class="section-head"><h2 class="section-heading" data-i18n="meals_title">Meals</h2></div>
-    <div class="card list-card" id="entriesCard">
-      <div id="entriesList"></div>
-      <div id="dayMarkRow" class="day-mark-row" hidden></div>
-    </div>
-
     <div class="card water-card">
       <div class="water-row">
         <span class="water-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg></span>
@@ -134,12 +120,19 @@
           <div class="water-val" id="waterVal">0 / 2 L</div>
         </div>
         <div class="water-bar" id="waterBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="water-fill" id="waterFill"></div></div>
-        <button class="chip-btn chip-accent" id="addWater250" type="button">+250 ml</button>
+        <button class="chip-btn chip-accent" id="addWater250" type="button" data-i18n="water_add_250">+250 ml</button>
+        <button class="water-expand" id="waterMoreBtn" type="button" aria-expanded="false" aria-controls="waterMore" data-i18n-aria="water_more" data-i18n-title="water_more"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
       </div>
-      <div class="water-more">
-        <button class="chip-btn chip-btn-remove" id="removeWater250" type="button">-250 ml</button>
-        <button class="chip-btn" id="addWater500" type="button">+500 ml</button>
+      <div class="water-more" id="waterMore" hidden>
+        <button class="chip-btn chip-btn-remove" id="removeWater250" type="button" data-i18n="water_remove_250">-250 ml</button>
+        <button class="chip-btn" id="addWater500" type="button" data-i18n="water_add_500">+500 ml</button>
       </div>
+    </div>
+
+    <div class="section-head"><h2 class="section-heading" data-i18n="meals_title">Meals</h2></div>
+    <div class="card list-card" id="entriesCard">
+      <div id="entriesList"></div>
+      <div id="dayMarkRow" class="day-mark-row" hidden></div>
     </div>
 
     <div class="card energy-card">
@@ -150,22 +143,21 @@
         </div>
         <span class="wellness-value" id="energyVal">–</span>
       </div>
+      <p class="energy-hint" id="energyHint" hidden></p>
     </div>
 
-    <div class="card" id="tipCard">
-      <div class="section-title-row">
-        <h2 class="section-title" data-i18n="tip_card_title">Today's Tip</h2>
-      </div>
+    <details class="card fold" id="tipCard">
+      <summary><span data-i18n="tip_card_title">Today's Tip</span></summary>
       <div id="tipContent">
         <button class="btn btn-secondary" id="getTipBtn" type="button" style="width:100%" data-i18n="get_tip_btn">Get a Tip for Today</button>
       </div>
-    </div>
+    </details>
 
-    <div class="card" id="gapRecommenderCard" hidden>
-      <h2 class="section-title" data-i18n="gap_recommender_title">Target Gap Recommender</h2>
+    <details class="card fold" id="gapRecommenderCard" hidden>
+      <summary><span data-i18n="gap_recommender_title">Target Gap Recommender</span></summary>
       <p class="explain-text" id="gapRecommenderExplain"></p>
       <div id="gapRecommenderList"></div>
-    </div>
+    </details>
 
     <button class="row-link" id="diaryLink" type="button">
       <span class="row-link-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></span>
@@ -373,6 +365,28 @@
   </div>
 </div>
 
+<!-- Roman Legion reaction preview (DEMO): opened from Settings, never part of the real screen -->
+<div class="modal-backdrop hidden" id="legionPreviewModal">
+  <div class="modal-sheet">
+    <div class="sheet-handle"></div>
+    <h2 data-i18n="legion_preview_title">Reaction preview</h2>
+    <p class="demo-head"><span class="demo-badge" data-i18n="legion_demo_tag">DEMO</span><span class="demo-note" data-i18n="legion_demo_note">Preview of the centurion's reactions. Nothing here is recorded or tracked.</span></p>
+    <div class="lg-preview">
+      <div class="lg-portrait-wrap" id="legionPreviewPortrait" aria-hidden="true"></div>
+      <div class="lg-bubble lg-preview-bubble" id="legionPreviewBubble" role="status" aria-live="polite"><span id="legionPreviewText"></span></div>
+    </div>
+    <div class="lg-chips" id="legionPreviewChips"></div>
+    <div class="demo-actions">
+      <button class="chip-btn" id="demoApprove" type="button" data-i18n="demo_approve">Approval</button>
+      <button class="chip-btn" id="demoRemind" type="button" data-i18n="demo_remind">Reminder</button>
+      <button class="chip-btn" id="demoDemand" type="button" data-i18n="demo_demand">Missing record</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="legionPreviewCloseBtn" type="button" style="width:100%" data-i18n="close">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Welcome modal -->
 <div class="modal-backdrop hidden" id="welcomeModal">
   <div class="modal-sheet">
@@ -499,16 +513,9 @@
       <button type="button" role="radio" aria-checked="false" data-mode-choice="normal" data-i18n="mode_normal">Normal</button>
       <button type="button" role="radio" aria-checked="false" data-mode-choice="roman" data-i18n="mode_roman">Roman Legion</button>
     </div>
-    <div class="settings-toggle-row" id="demoToggleRow">
-      <label class="toggle-switch">
-        <input type="checkbox" id="demoToggle" checked aria-labelledby="demoToggleText">
-        <span class="toggle-slider"></span>
-      </label>
-      <span id="demoToggleText" data-i18n="legion_demo_toggle">Show the reaction preview (demo)</span>
-    </div>
-
     <div class="settings-links">
       <button class="row-link" id="langBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span class="row-link-text" data-i18n="language_label">Language</span><span class="row-link-value" id="langValue">EN</span></button>
+      <button class="row-link" id="legionPreviewBtn" type="button" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg><span class="row-link-text" data-i18n="legion_preview_open">Preview the centurion's reactions (demo)</span></button>
       <button class="row-link" id="whatsNewBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span class="row-link-text" data-i18n="whats_new_title">What's New</span></button>
       <button class="row-link" id="installBtn" type="button" style="display:none"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span class="row-link-text" data-i18n="install_app">Install the app</span></button>
     </div>
@@ -554,6 +561,7 @@
 <script src="/whatsnew.js"></script>
 <script src="/units.js"></script>
 <script src="/legion.js"></script>
+<script src="/dialogs.js"></script>
 <script src="/api.js"></script>
 <script src="/app.js"></script>
 </body>

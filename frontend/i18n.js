@@ -309,6 +309,13 @@ const TRANSLATIONS = {
     demo_approve: "Approval",
     demo_remind: "Reminder",
     demo_demand: "Missing record",
+    energy_no_data_short: "No data",
+    water_more: "More amounts",
+    legion_preview_title: "Reaction preview",
+    legion_preview_open: "Preview the centurion's reactions (demo)",
+    water_add_250: "+250 ml",
+    water_add_500: "+500 ml",
+    water_remove_250: "−250 ml",
   },
 
   bg: {
@@ -623,6 +630,13 @@ const TRANSLATIONS = {
     demo_approve: "Одобрение",
     demo_remind: "Напомняне",
     demo_demand: "Липсващ запис",
+    energy_no_data_short: "Няма данни",
+    water_more: "Още количества",
+    legion_preview_title: "Преглед на реакциите",
+    legion_preview_open: "Преглед на реакциите на центуриона (демо)",
+    water_add_250: "+250 мл",
+    water_add_500: "+500 мл",
+    water_remove_250: "−250 мл",
   },
 };
 

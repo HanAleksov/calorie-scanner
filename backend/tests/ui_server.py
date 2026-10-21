@@ -80,57 +80,110 @@ async def test_hooks(request, call_next):
 
 
 def _draw_food(path, kind):
-    """Invented plates for the redesign screenshots (flat shapes, not photos of anything real)."""
+    """Fallback plates (flat shapes) used only when no demo photographs are available."""
     from PIL import Image, ImageDraw
     img = Image.new("RGB", (260, 260), (236, 226, 210))
     d = ImageDraw.Draw(img)
     d.ellipse((18, 18, 242, 242), fill=(250, 248, 244), outline=(214, 204, 190), width=4)
-    if kind == "porridge":
+    if kind == 0:
         d.ellipse((46, 46, 214, 214), fill=(226, 196, 150))
-        for x, y, c in [(100, 96, (176, 24, 48)), (140, 110, (40, 60, 150)), (120, 140, (200, 30, 52)), (86, 130, (50, 70, 160)), (156, 150, (186, 28, 50)), (110, 80, (40, 56, 140))]:
-            d.ellipse((x - 14, y - 14, x + 14, y + 14), fill=c)
-    elif kind == "chicken":
+        for x, y, col in [(100, 96, (176, 24, 48)), (140, 110, (40, 60, 150)), (120, 140, (200, 30, 52)), (86, 130, (50, 70, 160))]:
+            d.ellipse((x - 14, y - 14, x + 14, y + 14), fill=col)
+    elif kind == 1:
         d.ellipse((120, 56, 226, 150), fill=(196, 128, 60))
         d.ellipse((44, 110, 150, 206), fill=(246, 242, 232))
-        for i in range(14):
-            d.ellipse((58 + (i * 23) % 80, 124 + (i * 31) % 70, 70 + (i * 23) % 80, 134 + (i * 31) % 70), fill=(228, 222, 206))
         d.polygon([(150, 150), (206, 186), (170, 214)], fill=(66, 140, 66))
-        d.ellipse((130, 62, 200, 112), fill=(176, 104, 44))
-    else:  # yogurt
+    else:
         d.ellipse((50, 50, 210, 210), fill=(252, 250, 246), outline=(226, 220, 210), width=3)
         d.ellipse((70, 70, 190, 190), fill=(244, 238, 226))
-        for x, y in [(112, 104), (150, 96), (130, 134), (100, 140), (158, 138)]:
+        for x, y in [(112, 104), (150, 96), (130, 134)]:
             d.ellipse((x - 12, y - 12, x + 12, y + 12), fill=(196, 30, 54))
-        d.ellipse((120, 150, 150, 176), fill=(214, 170, 90))
     img.save(path, quality=90)
 
 
-def seed_demo_profile(today):
-    """One invented profile whose Today screen matches the approved concept's numbers (1440 of 2400 kcal)."""
+DEMO_PHOTO_DIR = Path(__file__).resolve().parent / "demo_photos"   # git-ignored: drop any food photographs here
+
+
+def make_demo_photos(count=4):
+    """Photo files for the demo meals. Real food photographs from backend/tests/demo_photos/ when there are any (if
+    there are fewer than `count`, different crops of them are used so the rows don't all look alike); otherwise drawn plates."""
+    from PIL import Image
     main.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    sources = sorted(p for ext in ("*.jpg", "*.jpeg", "*.png", "*.webp") for p in DEMO_PHOTO_DIR.glob(ext)) if DEMO_PHOTO_DIR.is_dir() else []
+    names = []
+    if not sources:
+        for n in range(count):
+            name = f"demo-{n}.jpg"
+            _draw_food(main.UPLOADS_DIR / name, n % 3)
+            names.append(name)
+        return names, False
+    crops = [None, (0.0, 0.10, 0.5, 0.55), (0.5, 0.0, 1.0, 0.45), (0.2, 0.25, 0.7, 0.85)]     # fractions of the picture
+    for n in range(count):
+        im = Image.open(sources[n % len(sources)]).convert("RGB")
+        box = crops[(n // len(sources)) % len(crops)]
+        if box:
+            w, h = im.size
+            im = im.crop((int(box[0] * w), int(box[1] * h), int(box[2] * w), int(box[3] * h)))
+        im.thumbnail((720, 720))
+        name = f"demo-{n}.jpg"
+        im.save(main.UPLOADS_DIR / name, quality=88)
+        names.append(name)
+    return names, True
+
+
+def _history(conn, uid, today, goal_kcal):
+    for d in range(1, 8):
+        day = today - timedelta(days=d)
+        for meal, hour, share in (("breakfast", "08", .3), ("lunch", "13", .4), ("dinner", "19", .3)):
+            db.insert_entry(conn, user_id=uid, created_at=f"{day.isoformat()}T{hour}:00:00", meal_type=meal, source="manual",
+                            items_json=json.dumps([{"name": "Seed " + meal, "est_grams": None}]), total_calories=round(goal_kcal * share),
+                            protein_g=45, carbs_g=80, fat_g=25, confidence="manual")
+
+
+def seed_demo_profile(today):
+    """Invented profiles for the redesign screenshots. "Demo" matches the approved concept's numbers (1440 of 2400 kcal);
+    the others show the edge states: an empty day, values over target (gain and lose goals) and very long names."""
+    photos, _real = make_demo_photos()
+    long_name = "Домашна мусака със сирене, патладжани и картофи, подправена с копър и чубрица, сервирана със зелена салата и тъмен хляб"
+
+    def person(conn, name, goal, goals, weight, entries, water, h=180):
+        uid = db.create_user(conn, name, None)["id"]
+        db.set_profile(conn, uid, {"goal_type": goal, "height_cm": h, "weight_kg": weight, "age": 25, "sex": "male", "activity_level": "moderate"})
+        db.set_goals(conn, uid, calories=goals[0], protein_g=goals[1], carbs_g=goals[2], fat_g=goals[3], water_ml=goals[4])
+        db.add_weight_entry(conn, uid, weight, f"{(today - timedelta(days=1)).isoformat()}T08:00:00")
+        _history(conn, uid, today, goals[0])
+        for e in entries:
+            db.insert_entry(conn, user_id=uid, created_at=f"{today.isoformat()}T{e['at']}:00", meal_type=e["meal"], source="photo" if e.get("photo") is not None else "manual",
+                            items_json=json.dumps([{"name": e["name"], "est_grams": 250, "calories": e["kcal"], "protein_g": e["p"], "carbs_g": e["c"], "fat_g": e["f"]}]),
+                            total_calories=e["kcal"], protein_g=e["p"], carbs_g=e["c"], fat_g=e["f"], confidence=e.get("conf", "high"),
+                            notes=e.get("note"), energy_score=e.get("energy"),
+                            image_path=photos[e["photo"] % len(photos)] if e.get("photo") is not None else None)
+        if water:
+            db.add_water(conn, uid, water, f"{today.isoformat()}T09:00:00")
+        return uid
+
     with db.get_conn() as conn:
-        uid = db.create_user(conn, "Demo", None)["id"]
-        db.set_profile(conn, uid, {"goal_type": "gain", "height_cm": 180, "weight_kg": 70, "age": 25, "sex": "male",
-                                   "activity_level": "moderate"})
-        db.set_goals(conn, uid, calories=2400, protein_g=150, carbs_g=270, fat_g=80, water_ml=2500)
-        db.add_weight_entry(conn, uid, 70.0, f"{(today - timedelta(days=1)).isoformat()}T08:00:00")
-        for d in range(1, 8):
-            day = today - timedelta(days=d)
-            for meal, hour, kcal in (("breakfast", "08", 700), ("lunch", "13", 900), ("dinner", "19", 800)):
-                db.insert_entry(conn, user_id=uid, created_at=f"{day.isoformat()}T{hour}:00:00", meal_type=meal, source="manual",
-                                items_json=json.dumps([{"name": "Seed " + meal, "est_grams": None}]), total_calories=kcal,
-                                protein_g=45, carbs_g=80, fat_g=25, confidence="manual")
-        for name, kind, hour, meal, item, kcal, p, c, f in (
-            ("demo-porridge.jpg", "porridge", "08:10", "snack", "Oats with berries", 420, 28, 52, 12),
-            ("demo-chicken.jpg", "chicken", "13:05", "lunch", "Chicken with rice", 720, 42, 78, 22),
-            ("demo-yogurt.jpg", "yogurt", "15:40", "snack", "Yogurt with berries", 300, 20, 32, 14),
-        ):
-            _draw_food(main.UPLOADS_DIR / name, kind)
-            db.insert_entry(conn, user_id=uid, created_at=f"{today.isoformat()}T{hour}:00", meal_type=meal, source="photo",
-                            items_json=json.dumps([{"name": item, "est_grams": 250, "calories": kcal, "protein_g": p, "carbs_g": c, "fat_g": f}]),
-                            total_calories=kcal, protein_g=p, carbs_g=c, fat_g=f, confidence="high", image_path=name)
-    with db.get_conn() as conn:
-        db.add_water(conn, uid, 1000, f"{today.isoformat()}T09:00:00")
+        person(conn, "Demo", "gain", (2400, 150, 270, 80, 2500), 70.0, [
+            dict(at="08:10", meal="snack", name="Овесена каша с боровинки", kcal=420, p=28, c=52, f=12, photo=0),
+            dict(at="13:05", meal="lunch", name="Пилешко с ориз", kcal=720, p=42, c=78, f=22, photo=1),
+            dict(at="15:40", meal="snack", name="Кисело мляко с плодове", kcal=300, p=20, c=32, f=14, photo=2),
+        ], 1000)
+        person(conn, "Demo Empty", "gain", (2400, 150, 270, 80, 2500), 70.0, [], 0)
+        person(conn, "Demo Over", "gain", (2400, 150, 270, 80, 2500), 70.0, [
+            dict(at="08:00", meal="breakfast", name="Палачинки с извара", kcal=820, p=60, c=90, f=30, photo=0, energy=4),
+            dict(at="13:00", meal="lunch", name="Телешко със задушени зеленчуци", kcal=1010, p=70, c=110, f=40, photo=1, energy=4),
+            dict(at="19:00", meal="dinner", name="Паста с пиле и сметанов сос", kcal=930, p=55, c=100, f=32, photo=3, energy=3),
+        ], 2800)
+        person(conn, "Demo Over Lose", "lose", (1900, 120, 200, 60, 2500), 78.0, [
+            dict(at="08:00", meal="breakfast", name="Тост с яйца и авокадо", kcal=640, p=34, c=58, f=34, photo=0),
+            dict(at="13:00", meal="lunch", name="Бургер с картофки", kcal=1040, p=48, c=98, f=52, photo=1),
+            dict(at="19:00", meal="dinner", name="Салата с печено пиле", kcal=570, p=44, c=40, f=24, photo=2),
+        ], 1200)
+        person(conn, "Demo Long", "gain", (2400, 150, 270, 80, 2500), 70.0, [
+            dict(at="08:20", meal="breakfast", name=long_name, kcal=640, p=36, c=58, f=28, photo=3, conf="low", energy=3,
+                 note="Порция около 400 г, без хляб; сиренето е повече от обикновено"),
+            dict(at="13:10", meal="lunch", name="Пилешко с ориз", kcal=720, p=42, c=78, f=22, photo=1, energy=4),
+        ], 1500)
 
 
 def seed():

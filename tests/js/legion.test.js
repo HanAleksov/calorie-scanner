@@ -60,7 +60,18 @@ test("an unknown language falls back to English; an unknown kind is an error", (
 test("the idle line comes from real totals only (nothing about times)", () => {
   assert.equal(L.idleKind({ entries: 0, calories: 0, goal: 2400 }), "idle_empty");
   assert.equal(L.idleKind({ entries: 3, calories: 1440, goal: 2400 }), "idle");
-  assert.equal(L.idleKind({ entries: 3, calories: 2400, goal: 2400 }), "idle_done");
+  assert.equal(L.idleKind({ entries: 3, calories: 2400, goal: 2400, goalType: "gain" }), "idle_done");
+});
+
+test("the idle line is goal-aware: going over is never congratulated for lose/maintain", () => {
+  const over = { entries: 3, calories: 2600, goal: 2400 };
+  assert.equal(L.idleKind({ ...over, goalType: "gain" }), "idle_done");
+  assert.equal(L.idleKind({ ...over, goalType: "lose" }), "idle_over");
+  assert.equal(L.idleKind({ ...over, goalType: "maintain" }), "idle_over");
+  assert.equal(L.idleKind({ ...over, goalType: null }), "idle_over");
+  assert.equal(L.idleKind({ entries: 3, calories: 2400, goal: 2400, goalType: "lose" }), "idle_done");
+  assert.equal(L.idleKind({ entries: 3, calories: 1500, goal: 2400, goalType: "lose" }), "idle");
+  for (const lang of ["bg", "en"]) assert.ok(!/изпълнена|met/i.test(L.reaction("idle_over", lang, 0).text), "the over line must not say the quota is met");
 });
 
 test("chips: nothing without data, only the values that exist, and the text is escaped", () => {
@@ -132,15 +143,57 @@ test("reset clears the reaction and its timer; idle kinds never start a timer", 
   assert.equal(timers.pending.size, 0);
 });
 
-// ---- the portrait and the guarantees
-test("the portrait draws every mood part, and the stylesheet gives every mood its own rules", () => {
-  const svg = L.portraitSvg();
-  for (const part of ["lg-mouth-idle", "lg-mouth-approve", "lg-mouth-remind", "lg-mouth-demand", "lg-prop-approve", "lg-prop-remind", "lg-prop-demand", "lg-brow-l", "lg-brow-r", "lg-crest", "lg-lids"]) {
-    assert.ok(svg.includes(part), part);
+// ---- the portraits and the guarantees
+const crypto = require("node:crypto");
+const FRONT = path.join(__dirname, "..", "..", "frontend");
+
+test("the four states each have their own portrait file, listed in one place, and the files exist", () => {
+  assert.deepEqual(Object.keys(L.ASSETS).sort(), [...L.MOODS].sort());
+  const hashes = new Set();
+  for (const mood of L.MOODS) {
+    const url = L.ASSETS[mood];
+    assert.ok(url.startsWith("/legion/"), url);
+    const file = path.join(FRONT, url);
+    assert.ok(fs.existsSync(file), `${url} is missing`);
+    const bytes = fs.readFileSync(file);
+    assert.ok(bytes.length > 500 && bytes.length < 150 * 1024, `${url} has a strange size`);
+    hashes.add(crypto.createHash("sha256").update(bytes).digest("hex"));
   }
+  assert.equal(hashes.size, 4, "the four states must not be the same picture");
+});
+
+test("replacing the art is only a file swap: the markup is four plain <img> elements and only the active one is shown", () => {
+  const html = L.portraitHtml("approve");
+  assert.equal((html.match(/<img /g) || []).length, 4);
+  assert.equal((html.match(/is-active/g) || []).length, 1);
+  assert.match(html, /data-mood="approve"[^>]*>/);
+  assert.ok(/class="lg-img is-active" data-mood="approve"/.test(html));
+  for (const url of Object.values(L.ASSETS)) assert.ok(html.includes(`src="${url}"`));
+  assert.ok(/class="lg-img is-active" data-mood="idle"/.test(L.portraitHtml()), "idle is the default");
   const css = read("style.css");
-  for (const mood of ["approve", "remind", "demand"]) assert.ok(css.includes(`.lg-mood-${mood} `), `no CSS for ${mood}`);
-  assert.ok(L.MOODS.every((m) => ["idle", "approve", "remind", "demand"].includes(m)));
+  assert.match(css, /\.lg-img\.is-active\s*\{\s*opacity:\s*1/);
+});
+
+test("the placeholder portraits are serious: no flush, sparks, shouting mouth, props or caricature parts", () => {
+  for (const mood of L.MOODS) {
+    const svg = fs.readFileSync(path.join(FRONT, L.ASSETS[mood]), "utf8");
+    assert.match(svg, /TEMPORARY placeholder/);
+    for (const banned of ["flush", "spark", "vein", "#D2362C", "#E0463A", "#F6EEE6\"/></g>", "prop"]) assert.ok(!svg.includes(banned), `${mood}: ${banned}`);
+  }
+  assert.ok(!read("style.css").includes("lg-flush") && !read("style.css").includes("lg-prop") && !read("style.css").includes("lg-mood-"));
+});
+
+test("the folder says what the final portraits must be and that these are temporary", () => {
+  const readme = read("legion/README.md");
+  assert.match(readme, /placeholders/i);
+  assert.match(readme, /3:4/);
+  for (const f of ["portrait-idle.svg", "portrait-approve.svg", "portrait-remind.svg", "portrait-demand.svg"]) assert.ok(readme.includes(f), f);
+});
+
+test("the service worker refreshes the portraits network-first, so replaced art is not stuck behind a cache", () => {
+  const sw = read("sw.js");
+  for (const url of Object.values(L.ASSETS)) assert.ok(sw.includes(`"${url}"`), url);
+  assert.ok(sw.includes('"/dialogs.js"'));
 });
 
 test("it is presentation only: no network, no storage, no AI, no timers of its own in legion.js", () => {
@@ -150,6 +203,6 @@ test("it is presentation only: no network, no storage, no AI, no timers of its o
   }
 });
 
-test("the portrait is marked as a temporary resource in the source", () => {
+test("the portraits are marked as a temporary resource in the source", () => {
   assert.match(read("legion.js"), /PLACEHOLDER ART/);
 });

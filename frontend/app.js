@@ -120,6 +120,7 @@ function toggleLanguage() {
   refreshLangBtn();
   updateScreenHeader();
   legion.reset();
+  previewLegion.reset();
   if (!$("appRoot").classList.contains("hidden")) {
     loadToday();
     if (document.getElementById("tab-history").classList.contains("active")) loadHistory();
@@ -379,7 +380,7 @@ function openWhatsNew() {
   renderWhatsNewContent();
   $("whatsNewModal").classList.remove("hidden");
 }
-$("whatsNewBtn").addEventListener("click", openWhatsNew);
+$("whatsNewBtn").addEventListener("click", () => openFromSettings("whatsNewModal", openWhatsNew));
 $("whatsNewCloseBtn").addEventListener("click", () => {
   localStorage.setItem("whatsNewSeenVersion", CURRENT_APP_VERSION);
   $("whatsNewModal").classList.add("hidden");
@@ -484,7 +485,7 @@ async function loadToday() {
   renderDayMark(data);
   $("diaryCount").textContent = data.entries.length === 1 ? t("entries_one") : t("entries_many", { n: data.entries.length });
   updateScreenHeader();
-  state.legionIdle = CSLegion.idleKind({ entries: data.entries.length, calories: data.totals.calories, goal: data.goals.calories });
+  state.legionIdle = CSLegion.idleKind({ entries: data.entries.length, calories: data.totals.calories, goal: data.goals.calories, goalType: state.goalType });
   if (!legion.current) renderLegion(null);
   state.firstTodayRender = false;
   loadCachedTip();
@@ -569,8 +570,14 @@ function applyGoalAwareClass(el, value, goal) {
 }
 
 // A number that changes after a save counts up to its new value (instant with reduced motion / first paint).
+// Every call starts a new "run" for that element; frames of an older run see they are stale and stop, so a late
+// frame can never overwrite the value a newer call has already set.
+const counterRuns = new Map();
 function setCounter(el, to, animate) {
-  const from = Number(el.dataset.v);
+  const run = (counterRuns.get(el) || 0) + 1;
+  counterRuns.set(el, run);
+  const shown = Number(el.textContent);
+  const from = Number.isFinite(shown) && el.textContent !== "" ? shown : Number(el.dataset.v);
   el.dataset.v = String(to);
   if (!animate || reduceMotion() || !Number.isFinite(from) || from === to || typeof requestAnimationFrame !== "function") {
     el.textContent = to;
@@ -579,8 +586,9 @@ function setCounter(el, to, animate) {
   const start = performance.now();
   const ms = 700;
   const tick = (now) => {
+    if (counterRuns.get(el) !== run) return;                 // a newer call took over
     const k = Math.min(1, (now - start) / ms);
-    el.textContent = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+    el.textContent = k >= 1 ? to : Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3)));
     if (k < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -615,7 +623,10 @@ function renderEnergy(avg) {
   const dots = document.querySelectorAll("#energyDots .energy-dot");
   const filled = avg == null ? 0 : Math.round(avg);
   dots.forEach((dot, i) => dot.classList.toggle("filled", i < filled));
-  $("energyVal").textContent = avg == null ? t("energy_no_data") : `${avg}/5`;
+  $("energyVal").textContent = avg == null ? t("energy_no_data_short") : `${avg}/5`;
+  const hint = $("energyHint");
+  hint.hidden = avg != null;
+  hint.textContent = avg == null ? t("energy_no_data") : "";
 }
 
 // ---------- Water ----------
@@ -634,6 +645,11 @@ async function addWater(ml) {
   const result = await write(null, "POST", "/api/water", { ml });
   if (wrote(result)) loadToday();
 }
+$("waterMoreBtn").addEventListener("click", () => {
+  const open = $("waterMoreBtn").getAttribute("aria-expanded") !== "true";
+  $("waterMoreBtn").setAttribute("aria-expanded", String(open));
+  $("waterMore").hidden = !open;
+});
 $("removeWater250").addEventListener("click", () => addWater(-250));
 $("addWater250").addEventListener("click", () => addWater(250));
 $("addWater500").addEventListener("click", () => addWater(500));
@@ -662,6 +678,7 @@ async function generateTip() {
     if (!result) return;
     if (!result.ok) throw new Error(t("could_not_get_tip"));
     renderTip(result.data.tip);
+    $("tipCard").open = true;
   } catch (err) {
     container.innerHTML = `<button class="btn btn-secondary" id="getTipBtn" style="width:100%">${t("get_tip_btn")}</button>`;
     $("getTipBtn").addEventListener("click", generateTip);
@@ -1636,33 +1653,43 @@ $("addFoodCloseBtn").addEventListener("click", closeAddFood);
 $("diaryLink").addEventListener("click", () => switchTab("history"));
 
 // ================== ROMAN LEGION (presentation only) ==================
-// Local lines and reactions: no network, no AI, nothing is stored or written to the user's data. The real meal
-// schedule and meal times are a separate piece of work, so "reminder" and "missing record" exist only as clearly
-// labelled demo reactions; "approval" additionally follows a real, just-completed meal log.
+// Local lines and reactions: no network, no AI, nothing is stored or written to the user's data. The hero shows the
+// centurion only in Roman style, and only what is real: a calm line from today's totals and, right after a meal was
+// actually logged, his approval. "Reminder" and "missing record" need a real meal schedule that does not exist yet, so
+// they live ONLY in the separate, clearly-labelled reaction preview (Settings -> preview), never on the real screen.
 const legion = CSLegion.createController({ render: (r) => renderLegion(r) });
+const previewLegion = CSLegion.createController({ render: (r) => renderPreview(r), idleDelayMs: 60 * 60 * 1000 });
 const isRoman = () => typeof look !== "undefined" && look.mode === "roman";
-const demoEnabled = () => { try { return localStorage.getItem("legionDemo") !== "0"; } catch (e) { return true; } };
-const DEMO_CHIPS = { remind: { nextMeal: "18:30" }, demand: { nextMeal: "18:30", lastLog: "15:40" } };
+const PREVIEW_CHIPS = { remind: { nextMeal: "18:30" }, demand: { nextMeal: "18:30", lastLog: "15:40" } };
+
+// All four portraits live in the holder; the active one is shown (a cross-fade).
+function setPortraitMood(holder, mood) {
+  if (!holder.innerHTML) holder.innerHTML = CSLegion.portraitHtml(mood);
+  holder.querySelectorAll(".lg-img").forEach((img) => img.classList.toggle("is-active", img.dataset.mood === mood));
+}
 
 function renderLegion(r) {
   const roman = isRoman();
   $("legionStage").hidden = !roman;
-  $("legionDemo").hidden = !(roman && demoEnabled());
+  $("legionBubble").hidden = !roman;
+  $("legionPreviewBtn").hidden = !roman;
   if (!roman) return;
-  const holder = $("legionPortrait");
-  if (!holder.innerHTML) holder.innerHTML = CSLegion.portraitSvg();
   const reaction = r || CSLegion.reaction(state.legionIdle, currentLang(), 0);
-  const svg = holder.querySelector("svg");
-  if (svg) svg.setAttribute("class", `lg-portrait lg-mood-${reaction.mood}`);
+  setPortraitMood($("legionPortrait"), reaction.mood);
   const bubble = $("legionBubble");
   $("legionText").textContent = reaction.text;
-  $("legionDemoTag").hidden = !(r && r.demo);
   bubble.classList.remove("swap");
   void bubble.offsetWidth;                       // restart the entrance animation
   bubble.classList.add("swap");
+}
+
+function renderPreview(r) {
+  const reaction = r || CSLegion.reaction("idle", currentLang(), 0);
+  setPortraitMood($("legionPreviewPortrait"), reaction.mood);
+  $("legionPreviewText").textContent = reaction.text;
   const word = t("legion_demo_word");
-  const chips = r && r.demo ? DEMO_CHIPS[r.kind] : null;
-  $("legionChips").innerHTML = chips
+  const chips = r ? PREVIEW_CHIPS[r.kind] : null;
+  $("legionPreviewChips").innerHTML = chips
     ? CSLegion.chipsHtml(
         { nextMeal: chips.nextMeal && `${chips.nextMeal} · ${word}`, lastLog: chips.lastLog && `${chips.lastLog} · ${word}` },
         { next: t("legion_next_meal"), last: t("legion_last_record") }, escapeHtml)
@@ -1673,17 +1700,17 @@ function afterMealLogged() {
   if (isRoman()) legion.show("approve", { lang: currentLang() });
 }
 
-function demoReaction(kind, vars) {
-  legion.show(kind, { lang: currentLang(), demo: true, vars, ms: 20000 });
+function previewReaction(kind, vars) {
+  previewLegion.show(kind, { lang: currentLang(), demo: true, vars, hold: true });
 }
-$("demoApprove").addEventListener("click", () => demoReaction("approve"));
-$("demoRemind").addEventListener("click", () => demoReaction("remind", { time: "18:30" }));
-$("demoDemand").addEventListener("click", () => demoReaction("demand"));
-$("demoToggle").checked = demoEnabled();
-$("demoToggle").addEventListener("change", (e) => {
-  try { localStorage.setItem("legionDemo", e.target.checked ? "1" : "0"); } catch (err) { /* not remembered */ }
-  renderLegion(legion.current);
-});
+$("demoApprove").addEventListener("click", () => previewReaction("approve"));
+$("demoRemind").addEventListener("click", () => previewReaction("remind", { time: "18:30" }));
+$("demoDemand").addEventListener("click", () => previewReaction("demand"));
+$("legionPreviewBtn").addEventListener("click", () => openFromSettings("legionPreviewModal", () => {
+  previewLegion.reset();
+  $("legionPreviewModal").classList.remove("hidden");
+}));
+$("legionPreviewCloseBtn").addEventListener("click", () => $("legionPreviewModal").classList.add("hidden"));
 if (typeof look !== "undefined") {
   look.onChange(() => { refreshAppearanceControls(); legion.reset(); });
   refreshAppearanceControls();
@@ -1702,49 +1729,82 @@ function labelFields() {
 labelFields();
 
 // Dialogs are opened/closed all over the file by toggling the `hidden` class. Rather than touch every call, one
-// observer gives every sheet the same behaviour: role/aria, focus moves into the sheet and comes back to what
-// opened it, Tab stays inside, Esc closes (through the sheet's own Close/Cancel button, so any cleanup that
-// button does still runs), and the page behind is inert so a screen reader or Tab can't wander off.
+// observer gives every sheet the same behaviour: role/aria; focus moves into the sheet and comes back to what
+// opened it; Tab stays inside the TOPMOST dialog; Esc closes it (through its own Close/Cancel button, so any cleanup
+// that button does still runs); everything underneath is inert. "Topmost" means the most recently OPENED (tracked by
+// CSDialogs.createStack, tested on its own), never the last one in the page, and every open dialog gets a higher
+// z-index than the one below it. A dialog opened FROM Settings (What's New, the reaction preview) replaces Settings
+// and brings it back when it closes, however it closes.
 const DIALOG_CLOSE_BUTTON = {
   addFoodModal: "addFoodCloseBtn", welcomeModal: "welcomeDismissBtn", photoReviewModal: "photoCancelBtn",
   whatsNewModal: "whatsNewCloseBtn", manualModal: "manualCancelBtn", favoritesModal: "favoritesCloseBtn",
-  editModal: "editCancelBtn", settingsModal: "settingsCloseBtn",
+  editModal: "editCancelBtn", settingsModal: "settingsCloseBtn", legionPreviewModal: "legionPreviewCloseBtn",
 };
 const dialogs = Array.from(document.querySelectorAll(".modal-backdrop"));
+const dialogStack = CSDialogs.createStack();
 const isOpen = (m) => !m.classList.contains("hidden");
 const isShown = (el) => !!el && (el.getClientRects ? el.getClientRects().length > 0 : true);
-const openDialogs = () => dialogs.filter(isOpen);
 const wasOpen = new Map();
-const openedFrom = new Map();
+const openerOf = new Map();             // dialog id -> the control that opened it
+const keepOpener = new Set();           // dialogs that will come back: remember what originally opened them
+let lastTrigger = null;                 // the control last clicked (Safari does not focus buttons on click)
+let focusOnOpen = null;                 // set when a dialog comes back: focus this control, not the sheet
+document.addEventListener("click", (e) => {
+  const el = e.target && e.target.closest ? e.target.closest("button, a, summary, input, select") : null;
+  if (el) lastTrigger = el;
+}, true);
+
+function openFromSettings(modalId, open) {
+  dialogStack.returnTo(modalId, "settingsModal");
+  keepOpener.add("settingsModal");
+  $("settingsModal").classList.add("hidden");
+  open();
+}
 
 function focusables(root) {
   return Array.from(root.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])'))
     .filter((el) => !el.disabled && !el.hidden && isShown(el));
 }
 
-function onDialogOpen(modal) {
-  openedFrom.set(modal, document.activeElement);
-  const sheet = modal.querySelector(".modal-sheet");
-  if (sheet) {
-    sheet.setAttribute("tabindex", "-1");
-    sheet.focus({ preventScroll: true });          // the sheet itself: announces its title without raising the keyboard
-  }
+function layoutDialogs() {
+  const order = dialogStack.order;
+  dialogs.forEach((m) => {
+    const at = order.indexOf(m.id);
+    m.style.zIndex = at >= 0 ? String(CSDialogs.zIndexAt(at)) : "";
+    const covered = at >= 0 && at < order.length - 1;
+    m.inert = covered;
+    if (covered) m.setAttribute("aria-hidden", "true"); else m.removeAttribute("aria-hidden");
+  });
   const root = $("appRoot");
-  root.setAttribute("aria-hidden", "true");
-  root.inert = true;
+  root.inert = order.length > 0;
+  if (order.length) root.setAttribute("aria-hidden", "true"); else root.removeAttribute("aria-hidden");
+}
+
+function onDialogOpen(modal) {
+  dialogStack.open(modal.id);
+  layoutDialogs();
+  if (!openerOf.has(modal.id)) openerOf.set(modal.id, lastTrigger || document.activeElement);
+  keepOpener.delete(modal.id);
+  const sheet = modal.querySelector(".modal-sheet");
+  const target = focusOnOpen && isShown(focusOnOpen) ? focusOnOpen : sheet;   // the sheet itself raises no keyboard
+  focusOnOpen = null;
+  if (sheet) sheet.setAttribute("tabindex", "-1");
+  if (target && target.focus) target.focus({ preventScroll: true });
 }
 
 function onDialogClose(modal) {
-  const stillOpen = openDialogs();
-  if (!stillOpen.length) {
-    const root = $("appRoot");
-    root.removeAttribute("aria-hidden");
-    root.inert = false;
-    const back = openedFrom.get(modal);
-    const target = isShown(back) ? back : (isShown($("addFoodBtn")) ? $("addFoodBtn") : null);
-    if (target && target.focus) target.focus({ preventScroll: true });
+  const { reopen } = dialogStack.close(modal.id);
+  layoutDialogs();
+  const opener = openerOf.get(modal.id);
+  if (!keepOpener.has(modal.id)) openerOf.delete(modal.id);
+  if (reopen) {                                       // opened from Settings: bring it back, focus on its opener
+    focusOnOpen = opener;
+    $(reopen).classList.remove("hidden");
+    return;
   }
-  openedFrom.delete(modal);
+  if (dialogs.some((m) => m !== modal && isOpen(m))) return;     // another sheet is (about to be) up: it keeps focus
+  const target = isShown(opener) ? opener : (isShown($("addFoodBtn")) ? $("addFoodBtn") : null);
+  if (target && target.focus) target.focus({ preventScroll: true });
 }
 
 function initDialogs() {
@@ -1768,11 +1828,11 @@ function initDialogs() {
     dialogs.forEach((modal) => observer.observe(modal, { attributes: true, attributeFilter: ["class"] }));
   }
   document.addEventListener("keydown", (e) => {
-    const open = openDialogs();
-    if (!open.length) return;
-    const top = open[open.length - 1];
+    const topId = dialogStack.top;
+    if (!topId) return;
+    const top = $(topId);
     if (e.key === "Escape") {
-      const close = $(DIALOG_CLOSE_BUTTON[top.id]);
+      const close = $(DIALOG_CLOSE_BUTTON[topId]);
       if (close) { e.preventDefault(); close.click(); }
       return;
     }
@@ -1851,6 +1911,7 @@ function attachSheetDrag(sheetEl, closeFn) {
 }
 
 attachSheetDrag($("addFoodModal"), closeAddFood);
+attachSheetDrag($("legionPreviewModal"), () => $("legionPreviewModal").classList.add("hidden"));
 attachSheetDrag($("welcomeModal"), () => $("welcomeModal").classList.add("hidden"));
 attachSheetDrag($("photoReviewModal"), closePhotoReview);
 attachSheetDrag($("whatsNewModal"), () => $("whatsNewModal").classList.add("hidden"));

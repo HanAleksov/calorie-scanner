@@ -6,3 +6,6 @@ backend/SESSION_NOTES.md
 __pycache__/
 *.pyc
 .venv/
+
+# local demo food photographs for the UI test server (not committed)
+backend/tests/demo_photos/

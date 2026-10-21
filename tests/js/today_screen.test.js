@@ -175,70 +175,188 @@ test("tabs: the floating button belongs to Today only, titles follow the tab", (
 });
 
 // ---- Roman Legion wiring
-test("Normal style: no stage, no demo panel, and a logged meal triggers no reaction", () => {
+const L = require("../../frontend/legion.js");
+const html = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "..", "frontend", "index.html"), "utf8");
+
+test("Normal style: no centurion, no bubble, no preview entry, and a logged meal triggers no reaction", () => {
   const h = page();
   h.run("renderLegion(null)");
   assert.equal(h.el("legionStage").hidden, true);
-  assert.equal(h.el("legionDemo").hidden, true);
+  assert.equal(h.el("legionBubble").hidden, true);
+  assert.equal(h.el("legionPreviewBtn").hidden, true);
   h.run("afterMealLogged()");
   assert.equal(h.run("legion.current"), null);
 });
 
-test("Roman style: stage and the clearly-labelled demo panel appear; the idle line comes from real totals", () => {
+test("Roman style shows the app itself: the centurion and a calm line from real totals, and NO demo tooling on Today", () => {
   const h = page({ storage: { lookMode: "roman" } });
   h.run('state.legionIdle = "idle"; renderLegion(null)');
   assert.equal(h.el("legionStage").hidden, false);
-  assert.equal(h.el("legionDemo").hidden, false);
+  assert.equal(h.el("legionBubble").hidden, false);
   assert.equal(h.el("legionText").textContent, "Имаш план. Спазвай го.");
-  assert.equal(h.el("legionDemoTag").hidden, true, "the idle line is not a demo");
-  assert.match(h.el("legionPortrait").innerHTML, /lg-portrait/);
+  assert.match(h.el("legionPortrait").innerHTML, /data-mood="idle"/);
+  const today = html.slice(html.indexOf('id="tab-today"'), html.indexOf('id="tab-history"'));
+  for (const gone of ["legionDemo", "demoApprove", "demoRemind", "demoDemand", "demoToggle", "ДЕМО", "DEMO"]) assert.ok(!today.includes(gone), `Today still has ${gone}`);
+  assert.ok(!html.includes('id="demoToggle"'), "the old always-on toggle is gone");
 });
 
-test("the demo toggle can hide the demo panel and remembers the choice", () => {
+test("the reaction preview is opened explicitly from Settings, which steps aside and comes back (see dialogs tests)", () => {
   const h = page({ storage: { lookMode: "roman" } });
-  h.el("demoToggle").checked = false;
-  h.fire("demoToggle", "change", { target: h.el("demoToggle") });
-  assert.equal(h.el("legionDemo").hidden, true);
-  assert.equal(h.run('localStorage.getItem("legionDemo")'), "0");
+  h.run("renderLegion(null)");
+  assert.equal(h.el("legionPreviewBtn").hidden, false, "offered in Roman style");
+  h.el("settingsModal").classList.remove("hidden");
+  h.el("legionPreviewModal").classList.add("hidden");
+  h.fire("legionPreviewBtn", "click");
+  assert.equal(h.el("settingsModal").classList.contains("hidden"), true, "Settings closes");
+  assert.equal(h.el("legionPreviewModal").classList.contains("hidden"), false, "the preview opens");
+  assert.match(html, /id="legionPreviewModal"[\s\S]*?data-i18n="legion_demo_tag"/, "the preview dialog is labelled DEMO");
+  h.fire("legionPreviewCloseBtn", "click");
+  assert.equal(h.el("legionPreviewModal").classList.contains("hidden"), true);
 });
 
-test("demo reactions: labelled DEMO, correct mood and text, chips marked demo, and NOT ONE request is sent", () => {
+test("preview reactions: right mood and text IN THE PREVIEW, chips marked demo, the real screen untouched, NOT ONE request sent", () => {
   const h = page({ storage: { lookMode: "roman" }, route: async () => json(200, {}) });
   const before = h.calls.fetches.length;
   h.fire("demoApprove", "click");
-  assert.equal(h.run("legion.current.mood"), "approve");
-  assert.equal(h.el("legionDemoTag").hidden, false);
+  assert.equal(h.run("previewLegion.current.mood"), "approve");
   h.fire("demoRemind", "click");
-  assert.equal(h.run("legion.current.mood"), "remind");
-  assert.match(h.el("legionText").textContent, /18:30/);
-  assert.match(h.el("legionChips").innerHTML, /18:30 · демо/);
+  assert.equal(h.run("previewLegion.current.mood"), "remind");
+  assert.match(h.el("legionPreviewText").textContent, /18:30/);
+  assert.match(h.el("legionPreviewChips").innerHTML, /18:30 · демо/);
   h.fire("demoDemand", "click");
-  assert.equal(h.run("legion.current.mood"), "demand");
-  assert.ok(require("../../frontend/legion.js").LINES.demand.bg.includes(h.el("legionText").textContent), "a line of the missing-record set");
-  assert.match(h.el("legionChips").innerHTML, /15:40 · демо/);
-  assert.equal(h.calls.fetches.length, before, "demo reactions never touch the network");
-  assert.equal(h.run("legion.current.demo"), true);
+  assert.equal(h.run("previewLegion.current.mood"), "demand");
+  assert.ok(L.LINES.demand.bg.includes(h.el("legionPreviewText").textContent), "a line of the missing-record set");
+  assert.match(h.el("legionPreviewChips").innerHTML, /15:40 · демо/);
+  assert.equal(h.run("legion.current"), null, "the real hero was not touched by the preview");
+  assert.equal(h.calls.fetches.length, before, "preview reactions never touch the network");
 });
 
-test("approval follows a REAL meal log and is not marked demo; it works in English too", () => {
+test("approval follows a REAL meal log on the real screen; it works in English too", () => {
   const h = page({ storage: { lookMode: "roman", lang: "en" } });
   h.run("afterMealLogged()");
   assert.equal(h.run("legion.current.kind"), "approve");
   assert.equal(h.run("legion.current.demo"), false);
-  assert.equal(h.el("legionDemoTag").hidden, true);
-  assert.ok(h.run("legion.current.text").length > 10);
+  assert.ok(h.el("legionText").textContent.length > 10);
+  assert.match(h.el("legionPortrait").innerHTML, /is-active" data-mood="approve"|data-mood="approve"/);
 });
 
 test("a language switch restarts the line in the new language", () => {
   const h = page({ storage: { lookMode: "roman" } });
   h.stub("renderUserList");
-  h.run('legion.show("demand", { lang: "bg", demo: true })');
+  h.run('legion.show("approve", { lang: "bg" })');
   h.run('localStorage.setItem("lang", "en"); legion.reset(); state.legionIdle = "idle"; renderLegion(null)');
   assert.equal(h.el("legionText").textContent, "You have a plan. Stick to it.");
 });
 
-test("what is logged is never touched by the legion: the demo adds no entry and sends no write", () => {
+test("what is logged is never touched by the legion: previews add no entry and send no write", () => {
   const h = page({ storage: { lookMode: "roman" }, route: async () => json(200, {}) });
   h.fire("demoDemand", "click");
   assert.equal(h.calls.fetches.filter((f) => f.method !== "GET").length, 0);
+});
+
+// ---- compact Today: water strip, folds, energy
+test("water: +250 ml is the main action; the other amounts sit behind an expander", () => {
+  const h = page({ route: async () => json(200, { water_ml: 1250 }) });
+  const today = html.slice(html.indexOf('id="tab-today"'), html.indexOf('id="tab-history"'));
+  assert.ok(today.indexOf('id="addWater250"') < today.indexOf('id="waterMore"'), "main button first, extras after");
+  assert.match(today, /id="waterMore" hidden>[\s\S]*id="removeWater250"[\s\S]*id="addWater500"/, "extras start hidden");
+  h.fire("waterMoreBtn", "click");
+  assert.equal(h.el("waterMoreBtn").getAttribute("aria-expanded"), "true");
+  assert.equal(h.el("waterMore").hidden, false);
+  h.fire("waterMoreBtn", "click");
+  assert.equal(h.el("waterMore").hidden, true);
+  assert.equal(h.el("waterMoreBtn").getAttribute("aria-expanded"), "false");
+});
+
+test("order on Today: summary, water strip, meals; then energy, advice and suggestions folded, then the diary row", () => {
+  const today = html.slice(html.indexOf('id="tab-today"'), html.indexOf('id="tab-history"'));
+  const at = (id) => today.indexOf(id);
+  assert.ok(at('id="heroCard"') < at('class="card water-card"') && at('class="card water-card"') < at('id="entriesList"'));
+  assert.ok(at('id="entriesList"') < at('class="card energy-card"') && at('class="card energy-card"') < at('id="tipCard"') && at('id="tipCard"') < at('id="gapRecommenderCard"') && at('id="gapRecommenderCard"') < at('id="diaryLink"'));
+  assert.match(today, /<details class="card fold" id="tipCard">/, "tip starts folded (no open attribute)");
+  assert.match(today, /<details class="card fold" id="gapRecommenderCard" hidden>/, "suggestions start folded");
+  assert.ok(!/id="tipCard"[^>]*\bopen\b/.test(today) && !/id="gapRecommenderCard"[^>]*\bopen\b/.test(today));
+});
+
+test("energy with no data: a short status and a SEPARATE explanatory line; with data the line goes away", () => {
+  const h = page();
+  h.run("renderEnergy(null)");
+  assert.equal(h.el("energyVal").textContent, "Няма данни");
+  assert.ok(h.el("energyVal").textContent.length < 14, "the right-hand status stays short");
+  assert.equal(h.el("energyHint").hidden, false);
+  assert.match(h.el("energyHint").textContent, /снимка/);
+  h.run("renderEnergy(3.6)");
+  assert.equal(h.el("energyVal").textContent, "3.6/5");
+  assert.equal(h.el("energyHint").hidden, true);
+});
+
+test("states the screen must survive: empty day, a very long meal name, values over the target", () => {
+  const h = page();
+  h.run(`state.goalType = "gain"; renderTotals({ calories: 2760, protein_g: 185, carbs_g: 300, fat_g: 102, energy_avg: null }, ${JSON.stringify(goals)})`);
+  assert.equal(h.el("ringCalsLeft").textContent, 0, "never negative");
+  assert.equal(h.el("calBarFill").style.width, "100%", "the bar stops at full");
+  assert.equal(h.el("proteinFill").style.width, "100%");
+  const long = "Домашна мусака ".repeat(12);
+  h.run(`renderEntries(${JSON.stringify([entry(1, long, 640, "08:20", { confidence: "low", notes: "Порция около 400 г" })])})`);
+  const rows = h.el("entriesList").innerHTML;
+  assert.match(rows, /low-confidence/);
+  assert.match(rows, /Порция около 400 г/);
+  assert.ok(require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "..", "frontend", "style.css"), "utf8").match(/\.entry-title \{[^}]*text-overflow: ellipsis/), "a long name is cut with an ellipsis, never wraps the row apart");
+  h.run("renderEntries([])");
+  assert.match(h.el("entriesList").innerHTML, /empty-state/);
+});
+
+// ---- the counter (animation) must not be overwritten by a stale frame
+test("counter: two renders with the same new values end on that value, and a stale frame never pulls it back", () => {
+  const h = loadApp({ storage: { lang: "bg" }, animation: true });
+  h.stub("loadToday");
+  h.run("state.firstTodayRender = false");
+  const render = (cals) => h.run(`renderTotals({ calories: ${cals}, protein_g: 0, carbs_g: 0, fat_g: 0, energy_avg: null }, ${JSON.stringify(goals)})`);
+  render(1440);                                   // 960 left (first paint of this element: instant)
+  assert.equal(h.el("ringCalsLeft").textContent, 960);
+  render(1740); render(1740);                     // the SAME new total twice, back to back: 660 left
+  const seen = [];
+  for (let i = 0; i < 14; i++) { h.frames.step(60); seen.push(Number(h.el("ringCalsLeft").textContent)); }
+  assert.equal(seen[seen.length - 1], 660, `ended on ${seen[seen.length - 1]}`);
+  for (let i = 1; i < seen.length; i++) assert.ok(seen[i] <= seen[i - 1], `the number went back up: ${seen.join(", ")}`);
+});
+
+test("counter: a call in the middle of an animation takes over from what is shown and the old frames stop", () => {
+  const h = loadApp({ storage: { lang: "bg" }, animation: true });
+  h.stub("loadToday");
+  h.run("state.firstTodayRender = false");
+  const render = (cals) => h.run(`renderTotals({ calories: ${cals}, protein_g: 0, carbs_g: 0, fat_g: 0, energy_avg: null }, ${JSON.stringify(goals)})`);
+  render(1440);
+  render(1740);                                   // heading to 660
+  h.frames.step(150);
+  const mid = Number(h.el("ringCalsLeft").textContent);
+  assert.ok(mid < 960 && mid > 660, `mid-animation ${mid}`);
+  render(1940);                                   // new target 460, called mid-animation
+  const seen = [];
+  for (let i = 0; i < 14; i++) { h.frames.step(60); seen.push(Number(h.el("ringCalsLeft").textContent)); }
+  assert.equal(seen[seen.length - 1], 460);
+  assert.ok(seen.every((v) => v <= mid), `it never jumps back up above ${mid}: ${seen.join(", ")}`);
+  assert.equal(h.frames.pending, 0, "no frames left running");
+});
+
+test("counter: an INSTANT update (no animation) also cancels a running one, so its frames can't overwrite it", () => {
+  const h = loadApp({ storage: { lang: "bg" }, animation: true });
+  h.stub("loadToday");
+  h.run("state.firstTodayRender = false");
+  const render = (cals) => h.run(`renderTotals({ calories: ${cals}, protein_g: 0, carbs_g: 0, fat_g: 0, energy_avg: null }, ${JSON.stringify(goals)})`);
+  render(1440);
+  render(1740);                                   // animating towards 660
+  h.frames.step(120);
+  h.run("state.firstTodayRender = true");         // e.g. a reload paints instantly
+  render(1940);                                   // 460, set at once
+  assert.equal(h.el("ringCalsLeft").textContent, 460);
+  for (let i = 0; i < 14; i++) { h.frames.step(60); assert.equal(h.el("ringCalsLeft").textContent, 460, `a stale frame overwrote it at step ${i}`); }
+});
+
+test("counter: the very first paint and reduced motion are instant", () => {
+  const h = loadApp({ storage: { lang: "bg" }, animation: true });
+  h.stub("loadToday");
+  h.run(`renderTotals({ calories: 1440, protein_g: 0, carbs_g: 0, fat_g: 0, energy_avg: null }, ${JSON.stringify(goals)})`);
+  assert.equal(h.el("ringCalsLeft").textContent, 960);
+  assert.equal(h.frames.pending, 0, "first paint schedules no animation");
 });

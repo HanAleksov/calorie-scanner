@@ -1,5 +1,6 @@
-const CACHE_NAME = "calorie-scanner-v21";
-const APP_SHELL = ["/", "/style.css", "/app.js", "/api.js", "/units.js", "/i18n.js", "/whatsnew.js", "/look.js", "/legion.js"];
+const CACHE_NAME = "calorie-scanner-v22";
+const APP_SHELL = ["/", "/style.css", "/app.js", "/api.js", "/units.js", "/i18n.js", "/whatsnew.js", "/look.js", "/legion.js", "/dialogs.js",
+  "/legion/portrait-idle.svg", "/legion/portrait-approve.svg", "/legion/portrait-remind.svg", "/legion/portrait-demand.svg"];
 const CACHE_FIRST_ASSETS = [
   "/manifest.json",
   "/icons/icon-192.png",
