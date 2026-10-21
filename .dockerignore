@@ -1,0 +1,13 @@
+# Keep local data, secrets and dev-only files out of the image even if someone builds it from a working copy.
+.git
+.claude
+**/.venv
+**/__pycache__
+backend/.env
+backend/*.db
+backend/*.db.bak*
+backend/uploads
+backend/server.log
+backend/tests
+backend/SESSION_NOTES.md
+AGENTS.md

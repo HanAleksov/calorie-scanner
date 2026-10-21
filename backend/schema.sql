@@ -1,8 +1,10 @@
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    pin_hash TEXT,
-    created_at TEXT NOT NULL
+    pin_hash TEXT,                 -- NULL = no PIN; legacy unsalted sha256 hex or "pbkdf2_sha256$..." (see auth.py)
+    created_at TEXT NOT NULL,
+    pin_failed_count INTEGER NOT NULL DEFAULT 0,   -- consecutive wrong PINs since the last success
+    pin_locked_until REAL                          -- epoch seconds; NULL = not locked
 );
 
 CREATE TABLE IF NOT EXISTS entries (
@@ -108,3 +110,16 @@ CREATE TABLE IF NOT EXISTS day_marks (
     status TEXT NOT NULL,          -- complete | skip
     PRIMARY KEY (user_id, day)
 );
+
+-- Server-side login sessions. The browser holds the random token in an HttpOnly cookie; only its SHA-256
+-- is stored here. csrf_token is returned to the page by GET /api/session and must be echoed in the
+-- X-CSRF-Token header on every state-changing request.
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    csrf_token TEXT NOT NULL,
+    created_at REAL NOT NULL,      -- epoch seconds
+    last_used_at REAL NOT NULL,
+    expires_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);

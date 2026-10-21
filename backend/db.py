@@ -1,9 +1,9 @@
-import hashlib
 import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
+import auth
 import tzutil
 
 BACKEND_DIR = Path(__file__).parent
@@ -63,6 +63,13 @@ def _migrate(conn) -> None:
         if "auto_apply_targets" not in goals_cols:
             conn.execute("ALTER TABLE goals ADD COLUMN auto_apply_targets INTEGER NOT NULL DEFAULT 1")
 
+    if _table_exists(conn, "users"):
+        user_cols = _table_columns(conn, "users")
+        if "pin_failed_count" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN pin_failed_count INTEGER NOT NULL DEFAULT 0")
+        if "pin_locked_until" not in user_cols:
+            conn.execute("ALTER TABLE users ADD COLUMN pin_locked_until REAL")
+
     if _table_exists(conn, "analyst_logs") and "coach_note" not in _table_columns(conn, "analyst_logs"):
         conn.execute("ALTER TABLE analyst_logs ADD COLUMN coach_note TEXT")
 
@@ -120,14 +127,10 @@ def _migrate(conn) -> None:
 
 # ---------- users ----------
 
-def _hash_pin(pin: str) -> str:
-    return hashlib.sha256(f"calorie-scanner:{pin}".encode()).hexdigest()
-
-
 def create_user(conn, name: str, pin: str | None = None) -> dict:
     cur = conn.execute(
         "INSERT INTO users (name, pin_hash, created_at) VALUES (?, ?, ?)",
-        (name, _hash_pin(pin) if pin else None, tzutil.now_local_naive().isoformat(timespec="seconds")),
+        (name, auth.hash_pin(pin) if pin else None, tzutil.now_local_naive().isoformat(timespec="seconds")),
     )
     user_id = cur.lastrowid
     conn.execute(
@@ -152,15 +155,6 @@ def list_users(conn) -> list:
     return [dict(r) for r in rows]
 
 
-def verify_pin(conn, user_id: int, pin: str) -> bool:
-    row = conn.execute("SELECT pin_hash FROM users WHERE id = ?", (user_id,)).fetchone()
-    if not row:
-        return False
-    if row["pin_hash"] is None:
-        return True  # no PIN set — open access
-    return row["pin_hash"] == _hash_pin(pin)
-
-
 def user_has_pin(conn, user_id: int) -> bool:
     row = conn.execute("SELECT pin_hash FROM users WHERE id = ?", (user_id,)).fetchone()
     return bool(row and row["pin_hash"] is not None)
@@ -173,8 +167,8 @@ def rename_user(conn, user_id: int, name: str) -> dict:
 
 def set_pin(conn, user_id: int, new_pin: str | None) -> None:
     conn.execute(
-        "UPDATE users SET pin_hash = ? WHERE id = ?",
-        (_hash_pin(new_pin) if new_pin else None, user_id),
+        "UPDATE users SET pin_hash = ?, pin_failed_count = 0, pin_locked_until = NULL WHERE id = ?",
+        (auth.hash_pin(new_pin) if new_pin else None, user_id),
     )
 
 
@@ -189,7 +183,52 @@ def delete_user(conn, user_id: int) -> None:
     conn.execute("DELETE FROM favorites WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM analyst_logs WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM day_marks WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+# ---------- sessions ----------
+
+def create_session(conn, user_id: int, token_hash: str, csrf_token: str, now: float,
+                    idle_seconds: float, absolute_seconds: float) -> None:
+    conn.execute(
+        "INSERT INTO sessions (token_hash, user_id, csrf_token, created_at, last_used_at, expires_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (token_hash, user_id, csrf_token, now, now, now + min(idle_seconds, absolute_seconds)),
+    )
+
+
+def get_session(conn, token_hash: str) -> dict | None:
+    row = conn.execute("SELECT * FROM sessions WHERE token_hash = ?", (token_hash,)).fetchone()
+    return dict(row) if row else None
+
+
+def touch_session(conn, token_hash: str, now: float, expires_at: float) -> None:
+    conn.execute("UPDATE sessions SET last_used_at = ?, expires_at = ? WHERE token_hash = ?",
+                 (now, expires_at, token_hash))
+
+
+def delete_session(conn, token_hash: str) -> None:
+    conn.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
+
+
+def delete_user_sessions(conn, user_id: int, except_token_hash: str | None = None) -> None:
+    if except_token_hash:
+        conn.execute("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", (user_id, except_token_hash))
+    else:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+
+def purge_expired_sessions(conn, now: float) -> None:
+    conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+
+
+def user_owns_upload(conn, user_id: int, filename: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM entries WHERE user_id = ? AND (image_path = ? OR image_path2 = ?) LIMIT 1",
+        (user_id, filename, filename),
+    ).fetchone()
+    return row is not None
 
 
 def get_image_paths_for_user(conn, user_id: int) -> list:

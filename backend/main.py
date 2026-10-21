@@ -16,14 +16,18 @@ from dotenv import load_dotenv
 
 load_dotenv(BACKEND_DIR / ".env")  # explicit path — don't rely on CWD-based .env discovery
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from urllib.parse import urlparse
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import auth
 import coach
 import db
 import meal_plan as meal_plan_module
 import nutrition
+import validation
 import vision
 
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend"
@@ -50,13 +54,91 @@ def health():
     return {"status": "ok"}
 
 
-def current_user_id(x_user_id: int | None = Header(default=None)) -> int:
-    if x_user_id is None:
-        raise HTTPException(401, "missing X-User-Id header — pick or create a profile first")
+# ---------- sessions, CSRF, cache headers ----------
+
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _is_https(request: Request) -> bool:
+    # Behind Coolify's proxy the app itself sees plain http; the proxy says what the browser used.
+    # (This only decides the cookie's Secure flag, so a spoofed header can't weaken anything.)
+    return request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https"
+
+
+def _same_origin(origin: str, request: Request) -> bool:
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip().lower()
+    return bool(host) and urlparse(origin).netloc.lower() == host
+
+
+@app.middleware("http")
+async def origin_check_and_cache_headers(request: Request, call_next):
+    path = request.url.path
+    if request.method not in SAFE_METHODS and path.startswith("/api/"):
+        origin = request.headers.get("origin")
+        if origin is not None and not _same_origin(origin, request):
+            return JSONResponse(
+                {"detail": {"code": "cross_origin", "message": "cross-origin request blocked"}}, status_code=403)
+    response = await call_next(request)
+    if path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"  # live, per-user data — never stored by the browser
+    return response
+
+
+def _session_from_request(request: Request) -> dict | None:
+    """The live session behind the request's cookie, or None (missing, unknown, idle-expired, or past
+    its absolute lifetime). Expired rows are deleted on sight. Last-use is refreshed at most every
+    SESSION_TOUCH_INTERVAL_SECONDS so reads don't turn into writes."""
+    token = request.cookies.get(auth.SESSION_COOKIE)
+    if not token:
+        return None
+    th = auth.token_hash(token)
+    t = auth.now()
     with db.get_conn() as conn:
-        if not db.get_user(conn, x_user_id):
-            raise HTTPException(401, "unknown user")
-    return x_user_id
+        session = db.get_session(conn, th)
+        if not session:
+            return None
+        if session["expires_at"] <= t or t - session["created_at"] >= auth.SESSION_ABSOLUTE_SECONDS \
+                or not db.get_user(conn, session["user_id"]):
+            db.delete_session(conn, th)
+            return None
+        if t - session["last_used_at"] > auth.SESSION_TOUCH_INTERVAL_SECONDS:
+            db.touch_session(conn, th, t, min(t + auth.SESSION_IDLE_SECONDS,
+                                               session["created_at"] + auth.SESSION_ABSOLUTE_SECONDS))
+    session["token_hash"] = th
+    return session
+
+
+def _require_csrf(request: Request, session: dict) -> None:
+    if request.method in SAFE_METHODS:
+        return
+    sent = request.headers.get(auth.CSRF_HEADER, "")
+    if not sent or not auth.tokens_equal(sent, session["csrf_token"]):
+        raise HTTPException(403, detail={"code": "csrf", "message": "missing or invalid CSRF token"})
+
+
+def current_session(request: Request) -> dict:
+    session = _session_from_request(request)
+    if not session:
+        raise HTTPException(401, detail={"code": "unauthenticated", "message": "sign in first"})
+    _require_csrf(request, session)
+    return session
+
+
+def current_user_id(session: dict = Depends(current_session)) -> int:
+    """Identity comes only from the server-side session — never from a client-claimed id."""
+    return session["user_id"]
+
+
+def _set_session_cookie(response: Response, request: Request, token: str) -> None:
+    response.set_cookie(
+        auth.SESSION_COOKIE, token, max_age=auth.SESSION_ABSOLUTE_SECONDS, path="/",
+        httponly=True, samesite="strict", secure=_is_https(request),
+    )
+
+
+def _clear_session_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(auth.SESSION_COOKIE, path="/", httponly=True, samesite="strict",
+                           secure=_is_https(request))
 
 
 def _entry_to_public(entry: dict) -> dict:
@@ -145,19 +227,19 @@ def _validate_profile_payload(payload: dict):
         raise HTTPException(400, f"goal_type must be one of {sorted(ALLOWED_GOAL_TYPE)}")
 
 
-# ---------- users ----------
+# ---------- users & sessions ----------
 
 @app.get("/api/users")
 def list_users():
+    """Profile picker for the gate. The numeric id only *selects* a profile to sign in to; it proves
+    nothing — every other route needs a session."""
     with db.get_conn() as conn:
         return db.list_users(conn)
 
 
 @app.post("/api/users")
 def create_user(payload: dict):
-    name = (payload.get("name") or "").strip()
-    if not name:
-        raise HTTPException(400, "name is required")
+    name = validation.text((payload.get("name") or "").strip(), "name", required=True, max_len=60)
     pin = payload.get("pin")
     if pin is not None and (not str(pin).isdigit() or len(str(pin)) != 4):
         raise HTTPException(400, "pin must be exactly 4 digits")
@@ -165,55 +247,116 @@ def create_user(payload: dict):
         return db.create_user(conn, name, pin)
 
 
-@app.post("/api/users/{user_id}/verify")
-def verify_user_pin(user_id: int, payload: dict):
+def _public_user(conn, user_id: int) -> dict:
+    user = db.get_user(conn, user_id)
+    user["has_pin"] = db.user_has_pin(conn, user_id)
+    return user
+
+
+@app.post("/api/session")
+def sign_in(payload: dict, request: Request, response: Response):
+    """Sign in to a profile (replacing whatever session this browser had). A profile with no PIN opens
+    without one — that explicit, chosen unlock is the only passwordless path. PIN profiles count wrong
+    attempts and lock after PIN_MAX_FAILURES; while locked even the right PIN is refused."""
+    user_id = payload.get("user_id")
+    if isinstance(user_id, bool) or not isinstance(user_id, int):
+        raise HTTPException(422, detail={"code": "invalid_number", "field": "user_id", "message": "user_id must be an integer"})
     with db.get_conn() as conn:
-        if not db.get_user(conn, user_id):
-            raise HTTPException(404, "user not found")
-        ok = db.verify_pin(conn, user_id, payload.get("pin", ""))
-    return {"ok": ok}
+        result = auth.check_pin_with_lockout(conn, user_id, payload.get("pin"))
+    # (the attempt counter was committed above, before any error is raised)
+    if result.status == auth.LoginResult.NO_USER:
+        raise HTTPException(404, detail={"code": "no_user", "message": "profile not found"})
+    if result.status == auth.LoginResult.LOCKED:
+        raise HTTPException(429, detail={"code": "locked", "retry_after": result.retry_after,
+                                          "message": "too many wrong PINs — try again later"},
+                            headers={"Retry-After": str(result.retry_after)})
+    if result.status == auth.LoginResult.PIN_REQUIRED:
+        raise HTTPException(401, detail={"code": "pin_required", "message": "this profile needs its PIN"})
+    if result.status == auth.LoginResult.WRONG_PIN:
+        raise HTTPException(401, detail={"code": "wrong_pin", "attempts_left": result.attempts_left,
+                                          "message": "wrong PIN"})
+
+    token, csrf = auth.new_token(), auth.new_token()
+    t = auth.now()
+    old_token = request.cookies.get(auth.SESSION_COOKIE)
+    with db.get_conn() as conn:
+        if old_token:
+            db.delete_session(conn, auth.token_hash(old_token))  # profile switch: the old session dies
+        db.purge_expired_sessions(conn, t)
+        db.create_session(conn, user_id, auth.token_hash(token), csrf, t,
+                          auth.SESSION_IDLE_SECONDS, auth.SESSION_ABSOLUTE_SECONDS)
+        user = _public_user(conn, user_id)
+    _set_session_cookie(response, request, token)
+    return {"user": user, "csrf_token": csrf}
+
+
+@app.get("/api/session")
+def get_session(session: dict = Depends(current_session)):
+    with db.get_conn() as conn:
+        user = _public_user(conn, session["user_id"])
+    return {"user": user, "csrf_token": session["csrf_token"]}
+
+
+@app.delete("/api/session")
+def sign_out(request: Request, response: Response):
+    """Idempotent: no/expired session is already signed out."""
+    session = _session_from_request(request)
+    if session:
+        _require_csrf(request, session)
+        with db.get_conn() as conn:
+            db.delete_session(conn, session["token_hash"])
+    _clear_session_cookie(response, request)
+    return {"ok": True}
 
 
 @app.get("/api/users/me")
 def get_current_user(user_id: int = Depends(current_user_id)):
     with db.get_conn() as conn:
-        user = db.get_user(conn, user_id)
-        user["has_pin"] = db.user_has_pin(conn, user_id)
-    return user
+        return _public_user(conn, user_id)
 
 
 @app.put("/api/users/me")
 def rename_current_user(payload: dict, user_id: int = Depends(current_user_id)):
-    name = (payload.get("name") or "").strip()
-    if not name:
-        raise HTTPException(400, "name is required")
+    name = validation.text((payload.get("name") or "").strip(), "name", required=True, max_len=60)
     with db.get_conn() as conn:
         return db.rename_user(conn, user_id, name)
 
 
 @app.put("/api/users/me/pin")
-def change_current_user_pin(payload: dict, user_id: int = Depends(current_user_id)):
+def change_current_user_pin(payload: dict, session: dict = Depends(current_session)):
+    user_id = session["user_id"]
     new_pin = payload.get("new_pin") or None
     old_pin = payload.get("old_pin") or ""
     if new_pin is not None and (not str(new_pin).isdigit() or len(str(new_pin)) != 4):
         raise HTTPException(400, "pin must be exactly 4 digits")
     with db.get_conn() as conn:
-        if db.user_has_pin(conn, user_id):
-            if not old_pin:
-                raise HTTPException(400, "old_pin is required to change an existing PIN")
-            if not db.verify_pin(conn, user_id, old_pin):
-                raise HTTPException(403, "old_pin is incorrect")
+        has_pin = db.user_has_pin(conn, user_id)
+        result = None
+        if has_pin and old_pin:
+            result = auth.check_pin_with_lockout(conn, user_id, old_pin)  # counts failures like sign-in
+    if has_pin:
+        if not old_pin:
+            raise HTTPException(400, "old_pin is required to change an existing PIN")
+        if result.status == auth.LoginResult.LOCKED:
+            raise HTTPException(429, detail={"code": "locked", "retry_after": result.retry_after,
+                                              "message": "too many wrong PINs — try again later"},
+                                headers={"Retry-After": str(result.retry_after)})
+        if result.status != auth.LoginResult.OK:
+            raise HTTPException(403, "old_pin is incorrect")
+    with db.get_conn() as conn:
         db.set_pin(conn, user_id, new_pin)
+        db.delete_user_sessions(conn, user_id, except_token_hash=session["token_hash"])  # other devices re-enter the PIN
     return {"ok": True, "has_pin": new_pin is not None}
 
 
 @app.delete("/api/users/me")
-def delete_current_user(user_id: int = Depends(current_user_id)):
+def delete_current_user(request: Request, response: Response, user_id: int = Depends(current_user_id)):
     with db.get_conn() as conn:
         image_paths = db.get_image_paths_for_user(conn, user_id)
-        db.delete_user(conn, user_id)
+        db.delete_user(conn, user_id)  # also removes the user's sessions
     for path in image_paths:
         _remove_upload(path)
+    _clear_session_cookie(response, request)
     return {"ok": True}
 
 
@@ -299,15 +442,21 @@ async def log_meal(
 @app.post("/api/log-manual")
 async def log_manual(
     meal_type: str = Form("snack"),
-    description: str = Form(...),
-    total_calories: int = Form(...),
-    protein_g: float = Form(0),
-    carbs_g: float = Form(0),
-    fat_g: float = Form(0),
+    description: str = Form(""),       # empty defaults, not Form(...): a missing value should reach
+    total_calories: str = Form(""),    # validation.* and come back in the same 422 shape as every other field
+    protein_g: str = Form("0"),
+    carbs_g: str = Form("0"),
+    fat_g: str = Form("0"),
     user_id: int = Depends(current_user_id),
 ):
     if meal_type not in ALLOWED_MEAL_TYPES:
         raise HTTPException(400, f"meal_type must be one of {sorted(ALLOWED_MEAL_TYPES)}")
+    description = validation.text(description.strip(), "description", required=True)
+    values = validation.entry_values(
+        {"total_calories": total_calories, "protein_g": protein_g, "carbs_g": carbs_g, "fat_g": fat_g},
+        require_all=True)
+    total_calories, protein_g, carbs_g, fat_g = (values["total_calories"], values["protein_g"],
+                                                 values["carbs_g"], values["fat_g"])
 
     with db.get_conn() as conn:
         entry = db.insert_entry(
@@ -349,11 +498,9 @@ def today(user_id: int = Depends(current_user_id)):
 
 @app.post("/api/water")
 def log_water(payload: dict, user_id: int = Depends(current_user_id)):
-    ml = payload.get("ml")
-    if not isinstance(ml, (int, float)) or ml == 0:
-        raise HTTPException(400, "ml must be a non-zero number")
+    ml = validation.water_delta(payload)  # negative = remove; db.add_water keeps the day's total >= 0
     with db.get_conn() as conn:
-        total = db.add_water(conn, user_id, int(ml), tzutil.now_local_naive().isoformat(timespec="seconds"))
+        total = db.add_water(conn, user_id, ml, tzutil.now_local_naive().isoformat(timespec="seconds"))
     return {"water_ml": total}
 
 
@@ -610,31 +757,24 @@ def set_auto_apply_targets(payload: dict, user_id: int = Depends(current_user_id
 
 @app.post("/api/weight")
 def log_weight(payload: dict, user_id: int = Depends(current_user_id)):
-    weight_kg = payload.get("weight_kg")
-    if not isinstance(weight_kg, (int, float)) or weight_kg <= 0:
-        raise HTTPException(400, "weight_kg must be a positive number")
+    values = validation.weigh_in(payload)
+    weight_kg = values.pop("weight_kg")
+    optional_fields = values  # fat_mass_kg / muscle_mass_kg / water_pct that were supplied
     lang = payload.get("lang")
     if lang not in ALLOWED_LANGS:
         lang = "bg"
 
-    optional_fields = {}
-    for field in ("fat_mass_kg", "muscle_mass_kg", "water_pct"):
-        value = payload.get(field)
-        if value is None:
-            continue
-        if not isinstance(value, (int, float)) or value <= 0:
-            raise HTTPException(400, f"{field} must be a positive number")
-        if field == "water_pct" and value > 100:
-            raise HTTPException(400, "water_pct must be between 0 and 100")
-        optional_fields[field] = value
-
     with db.get_conn() as conn:
+        goals_before = db.get_goals(conn, user_id)
         entry = db.add_weight_entry(
             conn, user_id, weight_kg, tzutil.now_local_naive().isoformat(timespec="seconds"),
             **optional_fields,
         )
         evaluate_and_auto_adjust_user(conn, user_id, lang=lang)
-    return entry
+        goals_after = db.get_goals(conn, user_id)
+    # The analyst may have changed the targets as a side effect; hand back the current ones so the
+    # page shows them immediately (changed or not) instead of whatever it loaded earlier.
+    return {**entry, "goals": goals_after, "goals_changed": goals_before != goals_after}
 
 
 @app.get("/api/weight")
@@ -727,21 +867,33 @@ def get_entry(entry_id: int, user_id: int = Depends(current_user_id)):
 
 @app.put("/api/entries/{entry_id}")
 def update_entry(entry_id: int, payload: dict, user_id: int = Depends(current_user_id)):
+    """Edits an entry in ONE transaction: optional per-item grams (`items`: [{est_grams}]) are rescaled
+    into new item macros/totals first, then any explicit calories/macros/meal_type/notes in the same
+    payload are applied on top (manual numbers deliberately win over the grams recalculation). Either
+    everything is saved or nothing is."""
     allowed = {"meal_type", "total_calories", "protein_g", "carbs_g", "fat_g", "notes"}
     fields = {k: v for k, v in payload.items() if k in allowed}
     if "meal_type" in fields and fields["meal_type"] not in ALLOWED_MEAL_TYPES:
         raise HTTPException(400, f"meal_type must be one of {sorted(ALLOWED_MEAL_TYPES)}")
+    fields.update(validation.entry_values(fields))
+    if "notes" in fields:
+        fields["notes"] = validation.text(fields["notes"], "notes")
+    grams = validation.portions(payload["items"]) if "items" in payload else None
+
     with db.get_conn() as conn:
-        if not db.get_entry(conn, user_id, entry_id):
+        entry = db.get_entry(conn, user_id, entry_id)
+        if not entry:
             raise HTTPException(404, "entry not found")
-        entry = db.update_entry(conn, user_id, entry_id, fields)
+        update = _portion_update(entry, grams) if grams is not None else {}
+        update.update(fields)
+        entry = db.update_entry(conn, user_id, entry_id, update)
     return _entry_to_public(entry)
 
 
 @app.post("/api/favorites")
 def create_favorite(payload: dict, user_id: int = Depends(current_user_id)):
     entry_id = payload.get("entry_id")
-    name = (payload.get("name") or "").strip()
+    name = validation.text((payload.get("name") or "").strip(), "name") or ""
     if not entry_id:
         raise HTTPException(400, "entry_id is required")
     with db.get_conn() as conn:
@@ -816,36 +968,35 @@ def delete_entry(entry_id: int, user_id: int = Depends(current_user_id)):
     return {"ok": True}
 
 
+def _portion_update(entry: dict, new_grams: list) -> dict:
+    """Column updates that rescale an entry's items (and re-sum its totals) to the given grams."""
+    old_items = json.loads(entry["items_json"])
+    if len(new_grams) != len(old_items):
+        raise HTTPException(400, "items must match the entry's item count")
+    entry_totals_fallback = {
+        "calories": entry.get("total_calories") or 0,
+        "protein_g": entry.get("protein_g") or 0,
+        "carbs_g": entry.get("carbs_g") or 0,
+        "fat_g": entry.get("fat_g") or 0,
+    }
+    new_items, totals = _rescale_items(old_items, new_grams, entry_totals_fallback)
+    return {
+        "items_json": json.dumps(new_items),
+        "total_calories": totals["calories"],
+        "protein_g": totals["protein_g"],
+        "carbs_g": totals["carbs_g"],
+        "fat_g": totals["fat_g"],
+    }
+
+
 @app.put("/api/entries/{entry_id}/portions")
 def adjust_portions(entry_id: int, payload: dict, user_id: int = Depends(current_user_id)):
-    new_items_payload = payload.get("items")
-    if not isinstance(new_items_payload, list):
-        raise HTTPException(400, "items must be a list")
-
+    grams = validation.portions(payload.get("items"))
     with db.get_conn() as conn:
         entry = db.get_entry(conn, user_id, entry_id)
         if not entry:
             raise HTTPException(404, "entry not found")
-        old_items = json.loads(entry["items_json"])
-        if len(new_items_payload) != len(old_items):
-            raise HTTPException(400, "items must match the entry's item count")
-
-        new_grams = [p.get("est_grams") for p in new_items_payload]
-        entry_totals_fallback = {
-            "calories": entry.get("total_calories") or 0,
-            "protein_g": entry.get("protein_g") or 0,
-            "carbs_g": entry.get("carbs_g") or 0,
-            "fat_g": entry.get("fat_g") or 0,
-        }
-        new_items, totals = _rescale_items(old_items, new_grams, entry_totals_fallback)
-
-        updated = db.update_entry(conn, user_id, entry_id, {
-            "items_json": json.dumps(new_items),
-            "total_calories": totals["calories"],
-            "protein_g": totals["protein_g"],
-            "carbs_g": totals["carbs_g"],
-            "fat_g": totals["fat_g"],
-        })
+        updated = db.update_entry(conn, user_id, entry_id, _portion_update(entry, grams))
     return _entry_to_public(updated)
 
 
@@ -917,15 +1068,9 @@ def set_goals(payload: dict, user_id: int = Depends(current_user_id)):
     required = {"calories", "protein_g", "carbs_g", "fat_g"}
     if not required.issubset(payload):
         raise HTTPException(400, f"payload must include {sorted(required)}")
+    goals = validation.goals_fields(payload)
     with db.get_conn() as conn:
-        return db.set_goals(
-            conn, user_id,
-            calories=payload["calories"],
-            protein_g=payload["protein_g"],
-            carbs_g=payload["carbs_g"],
-            fat_g=payload["fat_g"],
-            water_ml=payload.get("water_ml"),
-        )
+        return db.set_goals(conn, user_id, **goals)
 
 
 @app.get("/api/profile")
@@ -934,14 +1079,35 @@ def get_profile(user_id: int = Depends(current_user_id)):
         return db.get_profile(conn, user_id)
 
 
+_PROFILE_FIELDS = {"height_cm", "weight_kg", "age", "sex", "activity_level",
+                   "goal_type", "target_rate_kg_week", "dietary_notes"}
+
+
 @app.put("/api/profile")
 def set_profile(payload: dict, user_id: int = Depends(current_user_id)):
-    allowed = {"height_cm", "weight_kg", "age", "sex", "activity_level",
-               "goal_type", "target_rate_kg_week", "dietary_notes"}
-    fields = {k: v for k, v in payload.items() if k in allowed}
+    fields = {k: v for k, v in payload.items() if k in _PROFILE_FIELDS}
     _validate_profile_payload(fields)
+    fields.update(validation.profile_fields(fields))
     with db.get_conn() as conn:
         return db.set_profile(conn, user_id, fields)
+
+
+@app.post("/api/goals/apply")
+def apply_suggested_goals(payload: dict, user_id: int = Depends(current_user_id)):
+    """"Apply these targets" = save the profile they were calculated from AND the targets, as one
+    business transaction. Before this the page made two separate requests, so a failure in the second
+    left a new profile paired with old targets."""
+    profile_in, goals_in = payload.get("profile"), payload.get("goals")
+    if not isinstance(profile_in, dict) or not isinstance(goals_in, dict):
+        raise HTTPException(400, "payload must include 'profile' and 'goals' objects")
+    fields = {k: v for k, v in profile_in.items() if k in _PROFILE_FIELDS}
+    _validate_profile_payload(fields)
+    fields.update(validation.profile_fields(fields, require_all=True))
+    goals = validation.goals_fields(goals_in)
+    with db.get_conn() as conn:
+        profile = db.set_profile(conn, user_id, fields)
+        saved_goals = db.set_goals(conn, user_id, **goals)
+    return {"profile": profile, "goals": saved_goals}
 
 
 @app.post("/api/goals/suggested")
@@ -950,8 +1116,9 @@ def suggested_goals(payload: dict, user_id: int = Depends(current_user_id)):
     if not required.issubset(payload):
         raise HTTPException(400, f"payload must include {sorted(required)}")
     _validate_profile_payload(payload)
+    clean = {**payload, **validation.profile_fields(payload, require_all=True)}
     try:
-        return nutrition.calculate_targets(payload)
+        return nutrition.calculate_targets(clean)
     except (TypeError, ValueError) as e:
         raise HTTPException(400, str(e))
 
@@ -1073,11 +1240,16 @@ def create_coach_tip(lang: str = "en", user_id: int = Depends(current_user_id)):
 
 
 @app.get("/uploads/{filename}")
-def get_upload(filename: str):
+def get_upload(filename: str, user_id: int = Depends(current_user_id)):
+    """Meal photos are served only to the profile that owns an entry referencing the file, checked
+    on every request. Another profile (or no session) gets the same 401/404 as a missing file.
+    Nothing else serves this directory: the static mount below only covers frontend/."""
+    with db.get_conn() as conn:
+        owned = db.user_owns_upload(conn, user_id, filename)
     path = (UPLOADS_DIR / filename).resolve()
-    if UPLOADS_DIR.resolve() not in path.parents or not path.exists():
+    if not owned or UPLOADS_DIR.resolve() not in path.parents or not path.is_file():
         raise HTTPException(404)
-    return FileResponse(path)
+    return FileResponse(path, headers={"Cache-Control": "private, no-cache"})
 
 
 class NoCacheStaticFiles(StaticFiles):
