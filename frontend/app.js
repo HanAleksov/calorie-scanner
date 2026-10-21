@@ -1,6 +1,9 @@
 const state = {
   entryBeingEdited: null, units: "metric", pendingPinUserId: null, pendingPhotos: [],
   goalType: null, lastAdaptiveTdee: null,
+  sessionUserId: null,                          // who this page was signed in as (to spot a profile change)
+  canon: { heightCm: null, weightKg: null },    // canonical METRIC values behind the Plan form
+  today: null,                                  // last /api/today payload (to re-render targets without a refetch)
 };
 
 const $ = (id) => document.getElementById(id);
@@ -32,12 +35,50 @@ function toast(msg) {
   setTimeout(() => el.remove(), 3200);
 }
 
+// All network access goes through api.js. `apiFetch` keeps the old Response-style shape for read calls;
+// every write goes through `write()` below (single-flight, checks the outcome, never retries by itself).
+const api = CSApi.createApi({ onUnauthorized: () => handleUnauthorized() });
+const guard = CSApi.createGuard();
 function apiFetch(url, options = {}) {
-  const headers = { ...(options.headers || {}) };
-  const userId = localStorage.getItem("userId");
-  if (userId) headers["X-User-Id"] = userId;
-  return fetch(url, { ...options, headers });
+  return api.raw(url, options);
 }
+
+const FIELD_LABEL_KEY = {
+  height_cm: "height_cm", weight_kg: "weight_kg", age: "age", calories: "calories", protein_g: "protein_g",
+  carbs_g: "carbs_g", fat_g: "fat_g", total_calories: "calories", water_ml: "field_water_ml", ml: "field_ml",
+  description: "description", name: "your_name", fat_mass_kg: "fat_mass_kg_label",
+  muscle_mass_kg: "muscle_mass_kg_label", water_pct: "water_pct_label",
+};
+function fieldLabel(field) {
+  if (/^items\[\d+\]/.test(field)) return t("field_grams");
+  return FIELD_LABEL_KEY[field] ? t(FIELD_LABEL_KEY[field]) : field;
+}
+function failureMessage(result) {
+  return CSApi.describeError(result, t, fieldLabel);
+}
+function numOrNull(id) {
+  const v = $(id).value.trim();
+  return v === "" ? null : Number(v);
+}
+
+// Runs one write behind a single-flight guard (keyed by the button, or by method+path when there is no
+// button) and checks the outcome. Returns the api result, or undefined if an identical write is already
+// in flight. On failure it shows why and returns the failed result; callers leave their sheet open and
+// their fields untouched, so nothing the user typed is lost. Nothing is ever retried automatically.
+async function write(btn, method, path, body, { form, quiet } = {}) {
+  return guard(btn || `${method} ${path}`, async () => {
+    const wasDisabled = btn ? btn.disabled : false;
+    if (btn) btn.disabled = true;
+    try {
+      const result = await api.request(path, { method, json: body === null ? undefined : body, form, quiet });
+      if (!result.ok && !quiet) toast(failureMessage(result));
+      return result;
+    } finally {
+      if (btn) btn.disabled = wasDisabled;
+    }
+  });
+}
+const wrote = (result) => !!(result && result.ok);
 
 // ---------- Theme ----------
 function applyTheme(theme) {
@@ -117,15 +158,42 @@ $("installBtn").addEventListener("click", async () => {
   $("installBtn").style.display = "none";
 });
 
-// ================== USER GATE ==================
+// ================== USER GATE & SESSION ==================
+// "Who is signed in" is decided by the server from an HttpOnly session cookie. The numeric id on a
+// profile button only picks which profile to sign in to; it proves nothing and is never stored here.
 
 async function initUserGate() {
-  const storedId = localStorage.getItem("userId");
-  if (storedId) {
+  localStorage.removeItem("userId");   // the old claimed-id login: ignored from now on
+  let res = null;
+  try { res = await api.raw("/api/session", { quiet: true }); } catch (e) { /* offline: show the gate */ }
+  if (res && res.ok) {
+    const data = await res.json();
+    api.setCsrf(data.csrf_token);
+    state.sessionUserId = data.user.id;
     showApp();
     return;
   }
+  await showGate();
+}
+
+async function showGate(notice) {
+  $("appRoot").classList.add("hidden");   // hidden, not cleared: unsaved input survives a session expiry
+  $("userGate").classList.remove("hidden");
+  $("newPersonForm").classList.add("hidden");
+  $("pinForm").classList.add("hidden");
+  const note = $("gateNotice");
+  note.textContent = notice || "";
+  note.classList.toggle("hidden", !notice);
+  applyStaticTranslations();
   await renderUserList();
+}
+
+// The server said 401 (session ended / replaced). Show the sign-in screen over the app without throwing
+// anything away; signing back in as the SAME profile resumes where the user was, signing in as a
+// DIFFERENT one reloads the page so none of the previous profile's data, photos or drafts remain.
+function handleUnauthorized() {
+  api.setCsrf(null);
+  showGate(t("session_expired_notice"));
 }
 
 async function renderUserList() {
@@ -152,8 +220,7 @@ function escapeHtml(s) {
 
 function selectUser(id, hasPin, name) {
   if (!hasPin) {
-    localStorage.setItem("userId", id);
-    showApp();
+    signIn(id);   // a profile without a PIN opens on an explicit tap, no password
     return;
   }
   state.pendingPinUserId = id;
@@ -162,6 +229,26 @@ function selectUser(id, hasPin, name) {
   $("newPersonForm").classList.add("hidden");
   $("pinForm").classList.remove("hidden");
   $("pinInput").focus();
+}
+
+async function signIn(userId, pin) {
+  const result = await guard("sign-in", () =>
+    api.request("/api/session", { method: "POST", json: pin ? { user_id: userId, pin } : { user_id: userId } }));
+  if (!result) return false;
+  if (!result.ok) {
+    const e = result.error || {};
+    toast(e.code === "wrong_pin" ? t("err_pin_attempts_left", { n: e.attempts_left }) : failureMessage(result));
+    $("pinInput").value = "";
+    return false;
+  }
+  api.setCsrf(result.data.csrf_token);
+  if (state.sessionUserId !== null && state.sessionUserId !== result.data.user.id) {
+    location.reload();   // a different profile: start from a clean page
+    return true;
+  }
+  state.sessionUserId = result.data.user.id;
+  showApp();
+  return true;
 }
 
 $("newPersonBtn").addEventListener("click", () => {
@@ -174,20 +261,8 @@ $("pinBackBtn").addEventListener("click", () => {
   state.pendingPinUserId = null;
 });
 
-$("pinUnlockBtn").addEventListener("click", async () => {
-  const pin = $("pinInput").value.trim();
-  const res = await fetch(`/api/users/${state.pendingPinUserId}/verify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pin }),
-  });
-  const data = await res.json();
-  if (data.ok) {
-    localStorage.setItem("userId", state.pendingPinUserId);
-    showApp();
-  } else {
-    toast(t("wrong_pin"));
-  }
+$("pinUnlockBtn").addEventListener("click", () => {
+  signIn(state.pendingPinUserId, $("pinInput").value.trim());
 });
 
 $("createUserBtn").addEventListener("click", async () => {
@@ -201,18 +276,9 @@ $("createUserBtn").addEventListener("click", async () => {
     toast(t("pin_must_be_4_digits"));
     return;
   }
-  const res = await fetch("/api/users", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, pin: pin || null }),
-  });
-  if (!res.ok) {
-    toast(t("something_wrong"));
-    return;
-  }
-  const user = await res.json();
-  localStorage.setItem("userId", user.id);
-  showApp();
+  const created = await write($("createUserBtn"), "POST", "/api/users", { name, pin: pin || null });
+  if (!wrote(created)) return;
+  await signIn(created.data.id, pin || undefined);
 });
 
 function showApp() {
@@ -225,14 +291,10 @@ function showApp() {
   maybeShowWhatsNew();
 }
 
-$("switchUserBtn").addEventListener("click", () => {
-  localStorage.removeItem("userId");
-  $("appRoot").classList.add("hidden");
-  $("userGate").classList.remove("hidden");
-  $("newPersonForm").classList.add("hidden");
-  $("pinForm").classList.add("hidden");
-  applyStaticTranslations();
-  renderUserList();
+$("switchUserBtn").addEventListener("click", async () => {
+  const result = await write($("switchUserBtn"), "DELETE", "/api/session");
+  if (!wrote(result)) return;   // still signed in; the reason was shown
+  location.reload();            // fresh page: nothing of the previous profile survives in memory or on screen
 });
 
 // ---------- Welcome modal ----------
@@ -292,14 +354,9 @@ async function openSettings() {
 
 $("autoApplyToggle").addEventListener("change", async (e) => {
   const enabled = e.target.checked;
-  const res = await apiFetch("/api/settings/auto-apply-targets", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled }),
-  });
-  if (!res.ok) {
+  const result = await write(e.target, "PUT", "/api/settings/auto-apply-targets", { enabled });
+  if (!wrote(result)) {
     e.target.checked = !enabled;
-    toast(t("something_wrong"));
     return;
   }
   toast(enabled ? t("auto_apply_enabled_toast") : t("auto_apply_disabled_toast"));
@@ -311,12 +368,8 @@ $("settingsSaveNameBtn").addEventListener("click", async () => {
     toast(t("name_required"));
     return;
   }
-  const res = await apiFetch("/api/users/me", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
-  if (res.ok) toast(t("name_updated"));
+  const result = await write($("settingsSaveNameBtn"), "PUT", "/api/users/me", { name });
+  if (wrote(result)) toast(t("name_updated"));
 });
 
 $("settingsSavePinBtn").addEventListener("click", async () => {
@@ -326,28 +379,25 @@ $("settingsSavePinBtn").addEventListener("click", async () => {
     toast(t("pin_must_be_4_digits"));
     return;
   }
-  const res = await apiFetch("/api/users/me/pin", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ old_pin: oldPin || null, new_pin: newPin || null }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    if (res.status === 400 && !oldPin) toast(t("needs_old_pin"));
-    else if (res.status === 403) toast(t("wrong_old_pin"));
-    else toast(err.detail || t("something_wrong"));
+  const result = await write($("settingsSavePinBtn"), "PUT", "/api/users/me/pin",
+    { old_pin: oldPin || null, new_pin: newPin || null }, { quiet: true });
+  if (!result) return;
+  if (!result.ok) {
+    if (result.status === 400 && !oldPin) toast(t("needs_old_pin"));
+    else if (result.status === 403 && result.error.code !== "csrf") toast(t("wrong_old_pin"));
+    else toast(failureMessage(result));
     return;
   }
-  const data = await res.json();
-  toast(data.has_pin ? t("pin_updated") : t("pin_removed"));
-  $("settingsOldPinField").classList.toggle("hidden", !data.has_pin);
+  toast(result.data.has_pin ? t("pin_updated") : t("pin_removed"));
+  $("settingsOldPinField").classList.toggle("hidden", !result.data.has_pin);
   $("settingsOldPin").value = "";
   $("settingsNewPin").value = "";
 });
 
 $("resetTodayBtn").addEventListener("click", async () => {
   if (!confirm(t("reset_today_confirm"))) return;
-  await apiFetch("/api/today", { method: "DELETE" });
+  const result = await write($("resetTodayBtn"), "DELETE", "/api/today");
+  if (!wrote(result)) return;
   toast(t("today_reset"));
   $("settingsModal").classList.add("hidden");
   loadToday();
@@ -355,14 +405,9 @@ $("resetTodayBtn").addEventListener("click", async () => {
 
 $("deleteProfileBtn").addEventListener("click", async () => {
   if (!confirm(t("delete_profile_confirm"))) return;
-  await apiFetch("/api/users/me", { method: "DELETE" });
-  toast(t("profile_deleted"));
-  localStorage.removeItem("userId");
-  $("settingsModal").classList.add("hidden");
-  $("appRoot").classList.add("hidden");
-  $("userGate").classList.remove("hidden");
-  applyStaticTranslations();
-  renderUserList();
+  const result = await write($("deleteProfileBtn"), "DELETE", "/api/users/me");
+  if (!wrote(result)) return;
+  location.reload();   // the profile and its session are gone; reload lands on the sign-in screen
 });
 
 // ================== TODAY ==================
@@ -373,6 +418,7 @@ async function loadToday() {
   const [res, profileRes] = await Promise.all([apiFetch("/api/today"), apiFetch("/api/profile")]);
   if (!res.ok) return;
   const data = await res.json();
+  state.today = data;
   if (profileRes.ok) {
     const profile = await profileRes.json();
     state.goalType = profile && profile.goal_type;
@@ -390,12 +436,8 @@ async function loadToday() {
 // meal types, or the user explicitly confirmed it. A day with one snack is *unknown*, not
 // "ate 700 kcal" — this row is how the user tells the app "that was everything".
 async function setDayMark(day, status) {
-  const res = await apiFetch(`/api/days/${day}/mark`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
-  });
-  return res.ok;
+  const result = await write(null, "PUT", `/api/days/${day}/mark`, { status });
+  return wrote(result);
 }
 
 function renderDayMark(data) {
@@ -498,13 +540,8 @@ function renderWater(ml, goalMl) {
 }
 
 async function addWater(ml) {
-  const res = await apiFetch("/api/water", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ml }),
-  });
-  if (!res.ok) return;
-  loadToday();
+  const result = await write(null, "POST", "/api/water", { ml });
+  if (wrote(result)) loadToday();
 }
 $("removeWater250").addEventListener("click", () => addWater(-250));
 $("addWater250").addEventListener("click", () => addWater(250));
@@ -530,10 +567,10 @@ async function generateTip() {
   const container = $("tipContent");
   container.innerHTML = `<div class="tip-text"><span class="spinner dark"></span> ${t("generating_tip")}</div>`;
   try {
-    const res = await apiFetch(`/api/coach-tip?lang=${currentLang()}`, { method: "POST" });
-    if (!res.ok) throw new Error(t("could_not_get_tip"));
-    const data = await res.json();
-    renderTip(data.tip);
+    const result = await guard("coach-tip", () => api.request(`/api/coach-tip?lang=${currentLang()}`, { method: "POST" }));
+    if (!result) return;
+    if (!result.ok) throw new Error(t("could_not_get_tip"));
+    renderTip(result.data.tip);
   } catch (err) {
     container.innerHTML = `<button class="btn btn-secondary" id="getTipBtn" style="width:100%">${t("get_tip_btn")}</button>`;
     $("getTipBtn").addEventListener("click", generateTip);
@@ -601,26 +638,19 @@ function renderEntries(entries) {
 
 async function deleteEntry(id) {
   if (!confirm(t("delete_confirm"))) return;
-  await apiFetch(`/api/entries/${id}`, { method: "DELETE" });
-  loadToday();
+  const result = await write(null, "DELETE", `/api/entries/${id}`);
+  if (wrote(result)) loadToday();
 }
 
 // ---------- Favorites ----------
 async function saveAsFavorite(entryId) {
-  const res = await apiFetch("/api/favorites", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ entry_id: Number(entryId) }),
-  });
-  if (!res.ok) {
-    toast(t("something_wrong"));
-    return;
-  }
-  toast(t("favorite_saved_toast"));
+  const result = await write(null, "POST", "/api/favorites", { entry_id: Number(entryId) });
+  if (wrote(result)) toast(t("favorite_saved_toast"));
 }
 
 async function renderFavorites() {
   const res = await apiFetch("/api/favorites");
+  if (!res.ok) return;
   const { favorites } = await res.json();
   const list = $("favoritesList");
 
@@ -654,22 +684,15 @@ async function renderFavorites() {
     btn.addEventListener("click", async (ev) => {
       if (!confirm(t("delete_favorite_confirm"))) return;
       const id = ev.target.closest(".entry").dataset.id;
-      await apiFetch(`/api/favorites/${id}`, { method: "DELETE" });
-      renderFavorites();
+      const result = await write(null, "DELETE", `/api/favorites/${id}`);
+      if (wrote(result)) renderFavorites();
     })
   );
 }
 
 async function logFavorite(favoriteId) {
-  const res = await apiFetch(`/api/favorites/${favoriteId}/log`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ meal_type: $("mealTypeSelect").value }),
-  });
-  if (!res.ok) {
-    toast(t("something_wrong"));
-    return;
-  }
+  const result = await write(null, "POST", `/api/favorites/${favoriteId}/log`, { meal_type: $("mealTypeSelect").value });
+  if (!wrote(result)) return;
   toast(t("logged_from_favorite_toast"));
   $("favoritesModal").classList.add("hidden");
   loadToday();
@@ -683,6 +706,7 @@ $("favoritesCloseBtn").addEventListener("click", () => $("favoritesModal").class
 
 async function openEdit(id) {
   const res = await apiFetch(`/api/entries/${id}`);
+  if (!res.ok) return;
   const e = await res.json();
   state.entryBeingEdited = id;
   $("editMealType").value = e.meal_type;
@@ -715,40 +739,26 @@ $("editCancelBtn").addEventListener("click", () => $("editModal").classList.add(
 
 $("editSaveBtn").addEventListener("click", async () => {
   const id = state.entryBeingEdited;
-
-  // Grams shown -> recalculate calories/macros from them first (this also persists).
+  // ONE request: per-item grams (recalculate calories/macros from them) and the details together, so
+  // either everything is saved or nothing is.
+  const payload = { meal_type: $("editMealType").value };
   const gramsInputs = document.querySelectorAll(".edit-item-grams");
   if (gramsInputs.length) {
-    const items = Array.from(gramsInputs)
+    payload.items = Array.from(gramsInputs)
       .sort((a, b) => Number(a.dataset.idx) - Number(b.dataset.idx))
       .map((input) => ({ est_grams: input.value === "" ? null : Number(input.value) }));
-    const res = await apiFetch(`/api/entries/${id}/portions`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items }),
-    });
-    if (!res.ok) {
-      toast(t("something_wrong"));
-      return;
-    }
   }
-
-  // Advanced section open -> manual numbers take precedence over the grams recalc above.
-  const payload = { meal_type: $("editMealType").value };
+  // Advanced section open -> those manual numbers take precedence over the grams recalculation.
   if ($("editAdvancedDetails").open) {
     Object.assign(payload, {
-      total_calories: Number($("editCals").value),
-      protein_g: Number($("editProtein").value),
-      carbs_g: Number($("editCarbs").value),
-      fat_g: Number($("editFat").value),
+      total_calories: numOrNull("editCals"),
+      protein_g: numOrNull("editProtein"),
+      carbs_g: numOrNull("editCarbs"),
+      fat_g: numOrNull("editFat"),
     });
   }
-
-  await apiFetch(`/api/entries/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  const result = await write($("editSaveBtn"), "PUT", `/api/entries/${id}`, payload);
+  if (!wrote(result)) return;   // the sheet stays open with everything the user entered
   $("editModal").classList.add("hidden");
   loadToday();
 });
@@ -805,7 +815,7 @@ function closePhotoReview() {
 }
 $("photoCancelBtn").addEventListener("click", closePhotoReview);
 
-$("photoAnalyzeBtn").addEventListener("click", async () => {
+$("photoAnalyzeBtn").addEventListener("click", () => guard("photo-analyze", async () => {
   if (!state.pendingPhotos.length) return;
   const btn = $("photoAnalyzeBtn");
   const originalHtml = btn.innerHTML;
@@ -821,42 +831,39 @@ $("photoAnalyzeBtn").addEventListener("click", async () => {
   if (desc) formData.append("description", desc);
 
   try {
-    const res = await apiFetch("/api/log-meal", { method: "POST", body: formData });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || t("something_wrong"));
+    const result = await api.request("/api/log-meal", { method: "POST", form: formData });
+    if (!result.ok) {
+      toast(failureMessage(result));   // the review sheet stays open: photos and note are kept
+      return;
     }
-    const entry = await res.json();
-    toast(t("logged_kcal", { kcal: entry.total_calories, confidence: entry.confidence }));
+    toast(t("logged_kcal", { kcal: result.data.total_calories, confidence: result.data.confidence }));
     closePhotoReview();
     loadToday();
-  } catch (err) {
-    toast(err.message || t("something_wrong"));
   } finally {
     btn.innerHTML = originalHtml;
     btn.disabled = false;
   }
-});
+}));
 
 // ---------- Manual entry ----------
 $("manualEntryBtn").addEventListener("click", () => $("manualModal").classList.remove("hidden"));
 $("manualCancelBtn").addEventListener("click", () => $("manualModal").classList.add("hidden"));
 $("manualSaveBtn").addEventListener("click", async () => {
   const desc = $("manualDesc").value.trim();
-  const cals = Number($("manualCals").value);
-  if (!desc || !cals) {
+  if (!desc || $("manualCals").value.trim() === "") {
     toast(t("fill_desc_cals"));
     return;
   }
   const formData = new FormData();
   formData.append("meal_type", $("mealTypeSelect").value);
   formData.append("description", desc);
-  formData.append("total_calories", cals);
-  formData.append("protein_g", Number($("manualProtein").value) || 0);
-  formData.append("carbs_g", Number($("manualCarbs").value) || 0);
-  formData.append("fat_g", Number($("manualFat").value) || 0);
+  formData.append("total_calories", $("manualCals").value.trim());
+  formData.append("protein_g", $("manualProtein").value.trim() || "0");
+  formData.append("carbs_g", $("manualCarbs").value.trim() || "0");
+  formData.append("fat_g", $("manualFat").value.trim() || "0");
 
-  await apiFetch("/api/log-manual", { method: "POST", body: formData });
+  const result = await write($("manualSaveBtn"), "POST", "/api/log-manual", null, { form: formData });
+  if (!wrote(result)) return;   // keep the sheet and the fields: a failed save must not eat the entry
   $("manualModal").classList.add("hidden");
   ["manualDesc", "manualCals", "manualProtein", "manualCarbs", "manualFat"].forEach((id) => ($(id).value = ""));
   loadToday();
@@ -913,8 +920,9 @@ async function loadWeightLog() {
     apiFetch("/api/weight?limit=30"),
     apiFetch("/api/profile"),
   ]);
+  if (!weightRes.ok) return;
   const { entries } = await weightRes.json();
-  const profile = await profileRes.json();
+  const profile = profileRes.ok ? await profileRes.json() : null;
   const goalType = profile && profile.goal_type;
   const list = $("weightLogList");
 
@@ -965,38 +973,45 @@ async function loadWeightLog() {
   list.querySelectorAll(".delete-weight-btn").forEach((btn) =>
     btn.addEventListener("click", async (ev) => {
       const id = ev.target.closest(".weight-row").dataset.id;
-      await apiFetch(`/api/weight/${id}`, { method: "DELETE" });
-      loadWeightLog();
+      const result = await write(null, "DELETE", `/api/weight/${id}`);
+      if (wrote(result)) loadWeightLog();
     })
   );
 }
 
+// The analyst may have changed the targets while saving a weigh-in. The response carries the current
+// ones, so Today shows them straight away whether they changed or not (no stale ring until a refresh).
+function applyWeighInGoals(data) {
+  if (!data || !data.goals) return;
+  if (state.today) {
+    state.today.goals = data.goals;
+    renderTotals(state.today.totals, data.goals);
+    renderWater(state.today.water_ml, data.goals.water_ml);
+    renderGapRecommender(state.today.totals.calories, data.goals.calories);
+  } else {
+    loadToday();
+  }
+  if (data.goals_changed) toast(t("goals_updated_after_weigh_in", { calories: data.goals.calories }));
+}
+
 $("logWeightBtn").addEventListener("click", async () => {
-  const weightKg = Number($("weightLogInput").value);
-  if (!weightKg || weightKg <= 0) {
+  const weightKg = numOrNull("weightLogInput");
+  if (weightKg === null) {
     toast(t("enter_weight_first"));
     return;
   }
   const payload = { weight_kg: weightKg, lang: currentLang() };
-  const fatMass = Number($("scaleFatMass").value);
-  const muscleMass = Number($("scaleMuscleMass").value);
-  const waterPct = Number($("scaleWaterPct").value);
-  if (fatMass > 0) payload.fat_mass_kg = fatMass;
-  if (muscleMass > 0) payload.muscle_mass_kg = muscleMass;
-  if (waterPct > 0) payload.water_pct = waterPct;
-
-  const res = await apiFetch("/api/weight", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    toast(t("something_wrong"));
-    return;
+  for (const [field, id] of [["fat_mass_kg", "scaleFatMass"], ["muscle_mass_kg", "scaleMuscleMass"], ["water_pct", "scaleWaterPct"]]) {
+    const v = numOrNull(id);
+    if (v !== null) payload[field] = v;
   }
+
+  const result = await write($("logWeightBtn"), "POST", "/api/weight", payload);
+  if (!wrote(result)) return;
   toast(t("weight_logged_toast"));
   ["scaleFatMass", "scaleMuscleMass", "scaleWaterPct"].forEach((id) => ($(id).value = ""));
   loadWeightLog();
+  applyWeighInGoals(result.data);
 });
 
 // ---------- Scale screenshot scan ----------
@@ -1017,12 +1032,10 @@ $("scaleScanInput").addEventListener("change", async (e) => {
   formData.append("image", file);
 
   try {
-    const res = await apiFetch("/api/weight/scan", { method: "POST", body: formData });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || t("something_wrong"));
-    }
-    const data = await res.json();
+    const result = await guard("scale-scan", () => api.request("/api/weight/scan", { method: "POST", form: formData }));
+    if (!result) return;
+    if (!result.ok) throw new Error(failureMessage(result));
+    const data = result.data;
     $("weightLogInput").value = data.weight_kg;
     if (data.fat_mass_kg != null) $("scaleFatMass").value = data.fat_mass_kg;
     if (data.skeletal_muscle_kg != null) $("scaleMuscleMass").value = data.skeletal_muscle_kg;
@@ -1049,6 +1062,41 @@ $("scaleScanInput").addEventListener("change", async (e) => {
 });
 
 // ================== PLAN TAB ==================
+// Metric is the only stored/sent unit. Imperial is a view: what the fields show is always derived from the
+// canonical metric values in state.canon (units.js), which only change when the user types a new number.
+function renderUnitFields() {
+  const { heightCm, weightKg } = state.canon;
+  if (state.units === "metric") {
+    $("heightCm").value = heightCm ?? "";
+    $("heightIn").value = "";
+    $("weightKg").value = weightKg ?? "";
+    return;
+  }
+  if (heightCm != null) {
+    const { feet, inches } = CSUnits.cmToFeetInches(heightCm);
+    $("heightCm").value = feet;
+    $("heightIn").value = inches;
+  } else {
+    $("heightCm").value = "";
+    $("heightIn").value = "";
+  }
+  $("weightKg").value = weightKg != null ? CSUnits.kgToLb(weightKg) : "";
+}
+
+function syncCanonFromFields() {
+  const h = numOrNull("heightCm");
+  const inch = numOrNull("heightIn");
+  const w = numOrNull("weightKg");
+  if (state.units === "metric") {
+    state.canon.heightCm = h;
+    state.canon.weightKg = w;
+  } else {
+    state.canon.heightCm = h === null ? null : CSUnits.feetInchesToCm(h, inch || 0);
+    state.canon.weightKg = w === null ? null : CSUnits.lbToKg(w);
+  }
+}
+["heightCm", "heightIn", "weightKg"].forEach((id) => $(id).addEventListener("input", syncCanonFromFields));
+
 document.querySelectorAll(".unit-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".unit-btn").forEach((b) => b.classList.remove("active"));
@@ -1058,25 +1106,24 @@ document.querySelectorAll(".unit-btn").forEach((btn) => {
     document.querySelectorAll(".imperial-only").forEach((el) => (el.style.display = imperial ? "block" : "none"));
     $("heightLabel").textContent = imperial ? t("height_ft") : t("height_cm");
     $("weightLabel").textContent = imperial ? t("weight_lb") : t("weight_kg");
+    renderUnitFields();
   });
 });
 
 function getHeightCm() {
-  if (state.units === "metric") return Number($("heightCm").value) || 0;
-  const ft = Number($("heightCm").value) || 0;
-  const inch = Number($("heightIn").value) || 0;
-  return Math.round((ft * 12 + inch) * 2.54);
+  return state.canon.heightCm;
 }
 function getWeightKg() {
-  const raw = Number($("weightKg").value) || 0;
-  return state.units === "metric" ? raw : Math.round(raw * 0.453592 * 10) / 10;
+  return state.canon.weightKg;
 }
 
 async function loadPlanTab() {
   const res = await apiFetch("/api/profile");
+  if (!res.ok) return;
   const p = await res.json();
-  if (p.height_cm) $("heightCm").value = p.height_cm;
-  if (p.weight_kg) $("weightKg").value = p.weight_kg;
+  state.canon.heightCm = p.height_cm || null;
+  state.canon.weightKg = p.weight_kg || null;
+  renderUnitFields();
   if (p.age) $("age").value = p.age;
   if (p.sex) $("sex").value = p.sex;
   if (p.activity_level) $("activityLevel").value = p.activity_level;
@@ -1159,13 +1206,10 @@ $("calcGoalsBtn").addEventListener("click", async () => {
   btn.innerHTML = `<span class="spinner dark"></span> ${t("calculating")}`;
   btn.disabled = true;
   try {
-    const res = await apiFetch("/api/goals/suggested", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(profile),
-    });
-    if (!res.ok) throw new Error(t("could_not_calc"));
-    const targets = await res.json();
+    const result = await guard("calc-goals", () => api.request("/api/goals/suggested", { method: "POST", json: profile }));
+    if (!result) return;
+    if (!result.ok) throw new Error(failureMessage(result));
+    const targets = result.data;
     state.lastTargets = targets;
     state.lastProfile = profile;
 
@@ -1192,22 +1236,18 @@ $("calcGoalsBtn").addEventListener("click", async () => {
 
 $("applyGoalsBtn").addEventListener("click", async () => {
   if (!state.lastTargets || !state.lastProfile) return;
-  await apiFetch("/api/profile", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(state.lastProfile),
-  });
-  await apiFetch("/api/goals", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  // Profile + targets in ONE request / one transaction: a failure can't leave a new profile with old targets.
+  const result = await write($("applyGoalsBtn"), "POST", "/api/goals/apply", {
+    profile: state.lastProfile,
+    goals: {
       calories: state.lastTargets.target_calories,
       protein_g: state.lastTargets.protein_g,
       carbs_g: state.lastTargets.carbs_g,
       fat_g: state.lastTargets.fat_g,
       water_ml: state.lastTargets.water_ml,
-    }),
+    },
   });
+  if (!wrote(result)) return;
   toast(t("goals_applied"));
   loadGoalsForm();
   loadToday();
@@ -1303,16 +1343,13 @@ function renderAdaptiveTdee(data) {
     ${suggestionsHtml}`;
 
   $("applyAdaptiveTdeeBtn").addEventListener("click", async () => {
-    await apiFetch("/api/goals", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        calories: state.lastAdaptiveTdee.suggested_calories,
-        protein_g: state.lastAdaptiveTdee.protein_g,
-        carbs_g: state.lastAdaptiveTdee.carbs_g,
-        fat_g: state.lastAdaptiveTdee.fat_g,
-      }),
+    const result = await write($("applyAdaptiveTdeeBtn"), "PUT", "/api/goals", {
+      calories: state.lastAdaptiveTdee.suggested_calories,
+      protein_g: state.lastAdaptiveTdee.protein_g,
+      carbs_g: state.lastAdaptiveTdee.carbs_g,
+      fat_g: state.lastAdaptiveTdee.fat_g,
     });
+    if (!wrote(result)) return;
     toast(t("tdee_adaptive_applied_toast"));
     loadGoalsForm();
     loadToday();
@@ -1328,6 +1365,7 @@ function renderAdaptiveTdee(data) {
       const prioritizeCarbs = btn.dataset.prioritizeCarbs === "true";
       const proteinFloor = Number(btn.dataset.proteinFloor) || 0;
       const goalsRes = await apiFetch("/api/goals");
+      if (!goalsRes.ok) return;
       const goals = await goalsRes.json();
       const newCalories = goals.calories + delta;
 
@@ -1342,16 +1380,13 @@ function renderAdaptiveTdee(data) {
       }
       const carbsG = Math.round(Math.max(newCalories - proteinG * 4 - fatG * 9, 0) / 4);
 
-      await apiFetch("/api/goals", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          calories: Math.round(newCalories),
-          protein_g: Math.round(proteinG),
-          carbs_g: carbsG,
-          fat_g: Math.round(fatG),
-        }),
+      const result = await write(btn, "PUT", "/api/goals", {
+        calories: Math.round(newCalories),
+        protein_g: Math.round(proteinG),
+        carbs_g: carbsG,
+        fat_g: Math.round(fatG),
       });
+      if (!wrote(result)) return;
       toast(t("suggestion_applied_toast"));
       card.remove();
       loadGoalsForm();
@@ -1412,11 +1447,8 @@ async function logPlanMeal(idx) {
   formData.append("carbs_g", meal.carbs_g);
   formData.append("fat_g", meal.fat_g);
 
-  const res = await apiFetch("/api/log-manual", { method: "POST", body: formData });
-  if (!res.ok) {
-    toast(t("something_wrong"));
-    return;
-  }
+  const result = await write(null, "POST", "/api/log-manual", null, { form: formData });
+  if (!wrote(result)) return;
   toast(t("logged_from_plan_toast"));
   switchTab("today");
   loadToday();
@@ -1424,6 +1456,7 @@ async function logPlanMeal(idx) {
 
 async function loadSavedMealPlan() {
   const res = await apiFetch("/api/meal-plan");
+  if (!res.ok) return;
   const data = await res.json();
   if (data.plan === null) return;
   renderMealPlan(data);
@@ -1436,13 +1469,10 @@ $("genPlanBtn").addEventListener("click", async () => {
   btn.innerHTML = `<span class="spinner dark"></span> ${t("building_plan")}`;
   btn.disabled = true;
   try {
-    const res = await apiFetch(`/api/meal-plan?lang=${currentLang()}`, { method: "POST" });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || t("could_not_gen_plan"));
-    }
-    const plan = await res.json();
-    renderMealPlan(plan);
+    const result = await guard("gen-plan", () => api.request(`/api/meal-plan?lang=${currentLang()}`, { method: "POST" }));
+    if (!result) return;
+    if (!result.ok) throw new Error(failureMessage(result));
+    renderMealPlan(result.data);
     btn.textContent = t("regen_plan_btn");
     toast(t("plan_ready"));
   } catch (err) {
@@ -1456,6 +1486,7 @@ $("genPlanBtn").addEventListener("click", async () => {
 // ---------- Manual goal override ----------
 async function loadGoalsForm() {
   const res = await apiFetch("/api/goals");
+  if (!res.ok) return;
   const g = await res.json();
   $("goalCalories").value = g.calories;
   $("goalProtein").value = g.protein_g;
@@ -1464,17 +1495,14 @@ async function loadGoalsForm() {
   $("goalWater").value = g.water_ml;
 }
 $("saveGoalsBtn").addEventListener("click", async () => {
-  await apiFetch("/api/goals", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      calories: Number($("goalCalories").value),
-      protein_g: Number($("goalProtein").value),
-      carbs_g: Number($("goalCarbs").value),
-      fat_g: Number($("goalFat").value),
-      water_ml: Number($("goalWater").value),
-    }),
+  const result = await write($("saveGoalsBtn"), "PUT", "/api/goals", {
+    calories: numOrNull("goalCalories"),
+    protein_g: numOrNull("goalProtein"),
+    carbs_g: numOrNull("goalCarbs"),
+    fat_g: numOrNull("goalFat"),
+    water_ml: numOrNull("goalWater"),
   });
+  if (!wrote(result)) return;
   toast(t("goals_saved"));
   loadToday();
 });

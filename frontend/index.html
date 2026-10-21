@@ -27,6 +27,7 @@
     <button class="icon-btn" id="langBtnGate" style="float:right">BG</button>
     <div class="logo-mark" style="font-size:34px">🍽</div>
     <h1 data-i18n="who_is_this">Who's logging?</h1>
+    <p id="gateNotice" class="gate-notice hidden" role="status"></p>
 
     <div id="userList" class="user-list"></div>
 
@@ -34,13 +35,13 @@
 
     <div id="newPersonForm" class="hidden" style="margin-top:14px">
       <div class="field"><label data-i18n="your_name">Your name</label><input type="text" id="newUserName" data-i18n-ph="your_name_ph" placeholder="e.g. Aleks"></div>
-      <div class="field"><label data-i18n="pin_optional">4-digit PIN (optional)</label><input type="text" inputmode="numeric" maxlength="4" id="newUserPin" data-i18n-ph="pin_ph" placeholder="····"></div>
+      <div class="field"><label data-i18n="pin_optional">4-digit PIN (optional)</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="newUserPin" data-i18n-ph="pin_ph" placeholder="····"></div>
       <button class="btn btn-primary" id="createUserBtn" style="width:100%" data-i18n="create_profile">Create Profile</button>
     </div>
 
     <div id="pinForm" class="hidden" style="margin-top:14px">
       <p id="pinForLabel" style="font-size:13px;color:var(--text-dim)"></p>
-      <div class="field"><input type="text" inputmode="numeric" maxlength="4" id="pinInput" data-i18n-ph="pin_ph" placeholder="····"></div>
+      <div class="field"><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="pinInput" data-i18n-ph="pin_ph" placeholder="····"></div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="pinBackBtn" data-i18n="back">Back</button>
         <button class="btn btn-primary" id="pinUnlockBtn" data-i18n="unlock">Unlock</button>
@@ -434,8 +435,8 @@
     <hr class="settings-divider">
 
     <h3 class="settings-subtitle" data-i18n="change_pin">Change PIN</h3>
-    <div class="field hidden" id="settingsOldPinField"><label data-i18n="old_pin">Current PIN</label><input type="text" inputmode="numeric" maxlength="4" id="settingsOldPin" data-i18n-ph="pin_ph" placeholder="····"></div>
-    <div class="field"><label data-i18n="new_pin_optional">New 4-digit PIN (leave blank to remove)</label><input type="text" inputmode="numeric" maxlength="4" id="settingsNewPin" data-i18n-ph="pin_ph" placeholder="····"></div>
+    <div class="field hidden" id="settingsOldPinField"><label data-i18n="old_pin">Current PIN</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="settingsOldPin" data-i18n-ph="pin_ph" placeholder="····"></div>
+    <div class="field"><label data-i18n="new_pin_optional">New 4-digit PIN (leave blank to remove)</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="settingsNewPin" data-i18n-ph="pin_ph" placeholder="····"></div>
     <button class="btn btn-secondary" id="settingsSavePinBtn" style="width:100%" data-i18n="save_pin">Save PIN</button>
 
     <hr class="settings-divider">
@@ -465,6 +466,8 @@
 
 <script src="/i18n.js"></script>
 <script src="/whatsnew.js"></script>
+<script src="/units.js"></script>
+<script src="/api.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

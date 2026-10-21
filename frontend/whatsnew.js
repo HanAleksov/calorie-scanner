@@ -1,6 +1,19 @@
-const CURRENT_APP_VERSION = 11;
+const CURRENT_APP_VERSION = 12;
 
 const WHATS_NEW = [
+  {
+    version: 12,
+    en: [
+      "🔐 Safer sign-in — your profile is now protected on the server, not just on this screen. You'll enter your PIN once more after this update; profiles without a PIN still open with one tap. Five wrong PINs lock a profile for 15 minutes, and your meal photos are only visible to you.",
+      "💾 More reliable saving — if a save fails (or your connection drops), what you typed stays on screen instead of vanishing, and a double tap can't save things twice.",
+      "📏 Imperial units now convert properly when you switch, and numbers that can't be right (like a height of 175 ft) are rejected with a clear message.",
+    ],
+    bg: [
+      "🔐 По-безопасен вход — профилът ти вече е защитен на сървъра, не само на този екран. След тази промяна ще въведеш ПИН-а си още веднъж; профилите без ПИН пак се отварят с едно докосване. Пет грешни ПИН-а заключват профила за 15 минути, а снимките на храната са видими само за теб.",
+      "💾 По-надеждно записване — ако записът не успее (или връзката прекъсне), написаното остава на екрана, вместо да изчезне, а двойно докосване не може да запише нещо два пъти.",
+      "📏 Имперските мерки вече се преобразуват правилно при превключване, а невъзможни числа (например ръст 175 фута) се отхвърлят с ясно съобщение.",
+    ],
+  },
   {
     version: 11,
     en: [
