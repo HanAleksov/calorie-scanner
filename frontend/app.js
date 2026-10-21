@@ -174,7 +174,7 @@ function updateScreenHeader() {
   const sub = $("screenSub");
   if (tab === "today") {
     const day = state.today && state.today.date ? new Date(state.today.date + "T00:00:00") : new Date();
-    sub.textContent = day.toLocaleDateString(currentLang() === "bg" ? "bg-BG" : undefined, { day: "numeric", month: "long" });
+    sub.textContent = day.toLocaleDateString(currentLang() === "bg" ? "bg-BG" : "en-US", { day: "numeric", month: "long" });
   } else {
     sub.textContent = t(tab === "history" ? "sub_history" : "sub_plan");
   }
@@ -399,9 +399,12 @@ function maybeShowWhatsNew() {
 
 function renderWhatsNewContent() {
   const lang = currentLang();
-  $("whatsNewContent").innerHTML = WHATS_NEW
-    .map((entry) => `<div class="whats-new-version"><ul>${entry[lang].map((line) => `<li>${line}</li>`).join("")}</ul></div>`)
-    .join("");
+  // the newest version in full, earlier ones folded away
+  const block = (entry) => `<ul>${entry[lang].map((line) => `<li>${line}</li>`).join("")}</ul>`;
+  const [latest, ...earlier] = WHATS_NEW;
+  $("whatsNewContent").innerHTML = `<div class="whats-new-version latest">${block(latest)}</div>` + (earlier.length
+    ? `<details class="fold-inline whats-new-earlier"><summary>${t("whats_new_earlier")}</summary>${earlier.map((e) => `<div class="whats-new-version">${block(e)}</div>`).join("")}</details>`
+    : "");
 }
 
 function openWhatsNew() {
@@ -1074,7 +1077,7 @@ $("manualSaveBtn").addEventListener("click", async () => {
 
 // ================== PROGRESS ==================
 const HISTORY_DAYS = 14;
-const dateLocale = () => (currentLang() === "bg" ? "bg-BG" : undefined);
+const dateLocale = () => (currentLang() === "bg" ? "bg-BG" : "en-US");
 const shortDate = (dateStr) => new Date(dateStr + "T00:00:00").toLocaleDateString(dateLocale(), { month: "short", day: "numeric" });
 const longDate = (dateStr) => new Date(dateStr + "T00:00:00").toLocaleDateString(dateLocale(), { weekday: "long", month: "long", day: "numeric" });
 
@@ -1116,7 +1119,8 @@ function renderHistory() {
   }).join("");
   const labels = days.map((d) => `<span class="hc-lab${d.date === state.historySelected ? " is-selected" : ""}">${Number(d.date.slice(8, 10))}</span>`).join("");
   const goalLine = goal ? `<div class="hc-goal" style="bottom:${Math.min(100, (goal / top) * 100)}%"></div>` : "";
-  $("historyChart").innerHTML = `<div class="hc-area">${goalLine}<div class="hc-cols">${cols}</div></div><div class="hc-labels">${labels}</div>`;
+  const none = days.every((d) => d.status === "empty") ? `<p class="hc-empty">${t("history_empty")}</p>` : "";
+  $("historyChart").innerHTML = `<div class="hc-area">${goalLine}<div class="hc-cols">${cols}</div>${none}</div><div class="hc-labels">${labels}</div>`;
 
   const full = days.filter((d) => d.status === "complete");
   $("historyLegend").innerHTML = goal ? `<i class="hc-swatch" aria-hidden="true"></i>${t("history_goal_line", { kcal: goal })}` : "";
@@ -1466,7 +1470,7 @@ async function loadPlanTab() {
 
 // ---------- Analyst Feed (autonomous auto-adjustment log) ----------
 function _formatLogTime(createdAt) {
-  const locale = currentLang() === "bg" ? "bg-BG" : undefined;
+  const locale = currentLang() === "bg" ? "bg-BG" : "en-US";
   return new Date(createdAt.replace(" ", "T")).toLocaleString(locale, {
     month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
@@ -1757,7 +1761,7 @@ function renderMealPlan(plan) {
     )
     .join("");
 
-  const locale = currentLang() === "bg" ? "bg-BG" : undefined;
+  const locale = currentLang() === "bg" ? "bg-BG" : "en-US";
   const generatedLabel = plan.generated_at
     ? `Generated ${new Date(plan.generated_at.replace(" ", "T")).toLocaleString(locale, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
     : "";

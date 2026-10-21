@@ -9,3 +9,4 @@ __pycache__/
 
 # local demo food photographs for the UI test server (not committed)
 backend/tests/demo_photos/
+backend/*.db.bak*

@@ -219,6 +219,7 @@ def seed_demo_profile(today):
                  note="Порция около 400 г, без хляб; сиренето е повече от обикновено"),
             dict(at="13:10", meal="lunch", name="Пилешко с ориз", kcal=720, p=42, c=78, f=22, photo=1, energy=4),
         ], 1500)
+        db.create_user(conn, "Demo Blank", None)      # a brand-new profile: no goals set, no entries, no weigh-ins, no schedule
 
 
 def seed():

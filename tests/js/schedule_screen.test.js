@@ -595,3 +595,28 @@ test("toasts never swallow taps and are announced", () => {
   assert.match(rule, /pointer-events:\s*none/);
   assert.match(fs.readFileSync(path.join(__dirname, "..", "..", "frontend", "app.js"), "utf8"), /setAttribute\("role", "status"\)/);
 });
+
+// ---------- local only ----------
+test("reminders are local: a tick, a snooze and a skip make no network request at all", () => {
+  const h = page();
+  setDay(h, { at: "20:05" });
+  const before = h.calls.fetches.length;
+  h.run("reminderTick()");
+  h.fire("reminderLater", "click");
+  setDay(h, { at: "20:30" });
+  h.run("reminderTick()");
+  h.fire("reminderSkip", "click");
+  h.timers.tick();
+  assert.equal(h.calls.fetches.length, before, "nothing was sent anywhere");
+});
+
+test("the reminder code path never mentions the AI or any paid endpoint", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const app = fs.readFileSync(path.join(__dirname, "..", "..", "frontend", "app.js"), "utf8");
+  const block = app.slice(app.indexOf("// ================== MEAL SCHEDULE & IN-APP REMINDERS"), app.indexOf("// ---------- the schedule dialog ----------"));
+  assert.ok(block.length > 2000, "found the reminder block");
+  for (const banned of ["fetch(", "apiFetch(", "api.request(", "/api/coach", "/api/meal-plan", "/api/log-meal", "Notification", "serviceWorker"]) {
+    assert.ok(!block.includes(banned), `the reminder block must not use ${banned}`);
+  }
+});

@@ -178,5 +178,9 @@ test("describeError picks a localized message per failure kind", () => {
   assert.equal(describeError({ status: 422, error: { code: "required", field: "description" } }, tr, label), 'err_required{"field":"<description>"}');
   assert.equal(describeError({ status: 429, error: { code: "locked", retry_after: 600 } }, tr, label), 'err_locked{"minutes":10}');
   assert.equal(describeError({ status: 502, error: { message: "model unavailable" } }, tr, label), "model unavailable");
+  assert.equal(describeError({ status: 422, error: { code: "in_future", field: "eaten_time" } }, tr, label), "err_time_future");
+  assert.equal(describeError({ status: 422, error: { code: "invalid_time", field: "slots[0].time" } }, tr, label), 'err_invalid_time{"field":"<slots[0].time>"}');
+  assert.equal(describeError({ status: 422, error: { code: "duplicate", field: "slots[1].time" } }, tr, label), "err_duplicate_time");
+  assert.equal(describeError({ status: 422, error: { code: "too_many", field: "slots" } }, tr, label), "err_too_many");
   assert.equal(describeError({ status: 500, error: {} }, tr, label), "something_wrong");
 });
