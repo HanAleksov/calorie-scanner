@@ -61,10 +61,12 @@ class PreservationTests(AppTestCase):
     def setUp(self):
         super().setUp()
         self.pre = self.build_pre_stage1_database()
-        self.before = db_snapshot.snapshot(self.pre, with_rows=True)     # taken before anything else touches it
+        self.before = db_snapshot.snapshot(self.pre)     # taken before anything else touches it
         db.DB_PATH = self.pre
         db.init_db()                                                     # the startup migration, on the old file
-        self.after_migration = db_snapshot.snapshot(self.pre, with_rows=True)
+        self.after_migration = db_snapshot.snapshot(self.pre)
+        self.allow = {"allow_new_tables": {"sessions"},
+                      "allow_new_columns": ["users.pin_failed_count", "users.pin_locked_until"]}
 
     def test_the_before_snapshot_really_is_the_old_shape(self):
         self.assertNotIn("sessions", self.before["tables"])
@@ -72,9 +74,9 @@ class PreservationTests(AppTestCase):
         self.assertEqual(self.before["tables"]["entries"]["count"], 12)
 
     def test_migration_keeps_every_existing_row_unchanged(self):
-        report = db_snapshot.compare(self.before, self.after_migration, allow_new_tables={"sessions"})
+        report = db_snapshot.compare(self.before, self.after_migration, **self.allow)
         self.assertTrue(report["identical"], report)
-        self.assertTrue(any("users: new columns" in n for n in report["notes"]))
+        self.assertTrue(any("users.pin_failed_count: new column" in n for n in report["notes"]))
         self.assertEqual(self.after_migration["tables"]["sessions"]["count"], 0)
 
     def test_the_only_schema_changes_are_the_allowed_ones(self):
@@ -92,7 +94,7 @@ class PreservationTests(AppTestCase):
 
     def test_running_the_migration_again_is_a_no_op(self):
         db.init_db()
-        report = db_snapshot.compare(self.after_migration, db_snapshot.snapshot(self.pre, with_rows=True))
+        report = db_snapshot.compare(self.after_migration, db_snapshot.snapshot(self.pre))
         self.assertTrue(report["identical"], report)
 
     def test_legacy_pin_login_rewrites_only_that_users_hash_and_nothing_else(self):
@@ -100,12 +102,11 @@ class PreservationTests(AppTestCase):
         for uid, pin in ((1, "1234"), (2, None)):                         # Ана has a legacy PIN, Боян has none
             body = {"user_id": uid, **({"pin": pin} if pin else {})}
             self.assertEqual(c.post("/api/session", json=body).status_code, 200)
-        after_login = db_snapshot.snapshot(self.pre, with_rows=True)
+        after_login = db_snapshot.snapshot(self.pre)
         # without allowing the hash to change, the comparison must notice the upgrade ...
-        self.assertFalse(db_snapshot.compare(self.before, after_login, allow_new_tables={"sessions"})["identical"])
+        self.assertFalse(db_snapshot.compare(self.before, after_login, **self.allow)["identical"])
         # ... and with exactly that one column allowed, everything else is identical (sessions are new rows)
-        report = db_snapshot.compare(self.before, after_login, allow_new_tables={"sessions"},
-                                     allow_changed=["users.pin_hash"])
+        report = db_snapshot.compare(self.before, after_login, **self.allow, allow_changed=["users.pin_hash"])
         self.assertTrue(report["identical"], report)
         hashes = {r["id"]: r["pin_hash"] for r in self.rows("SELECT id, pin_hash FROM users")}
         self.assertTrue(hashes[1].startswith("pbkdf2_sha256$"))
@@ -116,17 +117,16 @@ class PreservationTests(AppTestCase):
 
     def test_a_failed_login_changes_no_existing_data(self):
         self.new_client().post("/api/session", json={"user_id": 1, "pin": "9999"})
-        report = db_snapshot.compare(self.before, db_snapshot.snapshot(self.pre, with_rows=True),
-                                     allow_new_tables={"sessions"}, allow_changed=["users.pin_failed_count"])
+        report = db_snapshot.compare(self.before, db_snapshot.snapshot(self.pre), **self.allow)
         self.assertTrue(report["identical"], report)
 
     def test_the_comparison_tool_does_catch_changes(self):
         with db.get_conn() as conn:
             conn.execute("UPDATE goals SET calories = 2924 WHERE user_id = 1")
             conn.execute("DELETE FROM weight_log WHERE id = 2")
-        report = db_snapshot.compare(self.before, db_snapshot.snapshot(self.pre, with_rows=True), allow_new_tables={"sessions"})
+        report = db_snapshot.compare(self.before, db_snapshot.snapshot(self.pre), **self.allow)
         self.assertFalse(report["identical"])
-        self.assertTrue(any(p.startswith("goals:") for p in report["problems"]))
+        self.assertTrue(any(p.startswith("goals.calories") for p in report["problems"]))
         self.assertTrue(any(p.startswith("weight_log:") for p in report["problems"]))
 
     def test_behaviour_after_the_migration_is_ordinary(self):

@@ -6,6 +6,7 @@ import json
 import shutil
 import sqlite3
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 import db
@@ -26,7 +27,6 @@ class BackupRestoreTests(AppTestCase):
         }
         self.add_entry(self.a, calories=640, image="a1.jpg", image2="a2.png")
         self.add_entry(self.b, calories=380, image="b1.webp")
-        self.add_entry(self.b, calories=200, image="vanished.jpg")                   # entry whose file is gone
         self.add_entry(self.a, calories=90)
         with db.get_conn() as conn:
             db.add_weight_entry(conn, self.a, 65.0, "2026-03-18T09:12:00", fat_mass_kg=12.1, muscle_mass_kg=31.5, water_pct=55.2)
@@ -41,7 +41,7 @@ class BackupRestoreTests(AppTestCase):
         return backup.create(self.src_db, main.UPLOADS_DIR, self.out)
 
     def snap(self, path):
-        return db_snapshot.snapshot(path, with_rows=True)
+        return db_snapshot.snapshot(path)
 
     # ---------- the good path ----------
     def test_create_verify_restore_round_trip_is_lossless(self):
@@ -56,10 +56,11 @@ class BackupRestoreTests(AppTestCase):
         m = report["manifest"]
         self.assertEqual(m["integrity_check"], "ok")
         self.assertEqual(m["photos_present"], 4)
-        self.assertEqual(m["photos_referenced"], 4)                  # a1, a2, b1, vanished
-        self.assertEqual(m["photos_referenced_but_missing"], ["vanished.jpg"])
+        self.assertEqual(m["photos_referenced"], 3)                  # a1, a2, b1
+        self.assertEqual(m["photos_referenced_but_missing"], [])
+        self.assertEqual(report["incomplete"], [])
         self.assertEqual(m["photos_unreferenced"], ["orphan.jpg"])
-        self.assertEqual(m["table_counts"]["entries"], 4)
+        self.assertEqual(m["table_counts"]["entries"], 3)
 
         new_db, new_up = self.tmp / "restored" / "calorie_scanner.db", self.tmp / "restored" / "uploads"
         result = backup.restore(archive, new_db, new_up)
@@ -180,6 +181,194 @@ class BackupRestoreTests(AppTestCase):
         self.assertEqual(backup.main(["verify", str(self.tmp / "missing.zip")]), 1)
         self.assertEqual(backup.main(["create", "--db", str(self.tmp / "nope.db"), "--uploads", str(main.UPLOADS_DIR),
                                       "--out", str(self.out)]), 1)
+
+    # ---------- an archive that is not a whole backup must never pass ----------
+    def raw_archive(self, name, members):
+        path = self.tmp / name
+        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+            for member, data in members:
+                z.writestr(member, data)
+        return path
+
+    def good_manifest(self):
+        with zipfile.ZipFile(self.make_archive()) as z:
+            return json.loads(z.read("MANIFEST.json"))
+
+    def test_an_archive_with_only_a_manifest_is_not_valid(self):
+        only_manifest = self.raw_archive("only-manifest.zip", [("MANIFEST.json", json.dumps(self.good_manifest()))])
+        report = backup.verify(only_manifest)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("database (db/calorie_scanner.db) is not in the archive" in p for p in report["problems"]), report)
+        with self.assertRaises(backup.BackupError):
+            backup.restore(only_manifest, self.tmp / "x" / "a.db", self.tmp / "x" / "u")
+        self.assertEqual(backup.main(["verify", str(only_manifest)]), 1)
+
+    def test_a_bare_manifest_with_nothing_in_it_is_not_valid(self):
+        bare = self.raw_archive("bare.zip", [("MANIFEST.json", json.dumps({"format_version": 1, "files": {}, "table_counts": {}}))])
+        report = backup.verify(bare)
+        self.assertFalse(report["ok"])
+        self.assertTrue(report["problems"], "an archive without a database must name why it is rejected")
+
+    def test_a_manifest_that_does_not_list_the_database_is_not_valid(self):
+        m = self.good_manifest()
+        del m["files"]["db/calorie_scanner.db"]
+        with zipfile.ZipFile(self.make_archive_again()) as z:
+            members = [(n, z.read(n)) for n in z.namelist() if n != "MANIFEST.json"]
+        bad = self.raw_archive("no-db-listed.zip", members + [("MANIFEST.json", json.dumps(m))])
+        report = backup.verify(bad)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("does not list the database" in p for p in report["problems"]), report)
+
+    def make_archive_again(self):
+        return backup.create(self.src_db, main.UPLOADS_DIR, self.out, now=datetime(2030, 1, 1, 0, 0, 0))
+
+    def test_malformed_manifests_are_reported_not_crashed_on(self):
+        good = self.good_manifest()
+        broken = {
+            "a list": [],
+            "no files": {**good, "files": {}},
+            "files not a dict": {**good, "files": []},
+            "bad sha": {**good, "files": {**good["files"], "db/calorie_scanner.db": {"sha256": "zz", "bytes": 1}}},
+            "bytes not a number": {**good, "files": {**good["files"], "db/calorie_scanner.db": {**good["files"]["db/calorie_scanner.db"], "bytes": "9"}}},
+            "no table counts": {k: v for k, v in good.items() if k != "table_counts"},
+            "wrong version": {**good, "format_version": 99},
+            "integrity claim not ok": {**good, "integrity_check": "malformed"},
+            "missing list": {k: v for k, v in good.items() if k != "photos_referenced_but_missing"},
+            "path traversal": {**good, "files": {**good["files"], "uploads/../../evil": good["files"]["db/calorie_scanner.db"]}},
+        }
+        with zipfile.ZipFile(self.make_archive_again()) as z:
+            members = [(n, z.read(n)) for n in z.namelist() if n != "MANIFEST.json"]
+        for label, manifest in broken.items():
+            with self.subTest(label):
+                path = self.raw_archive(f"m-{label.replace(' ', '-')}.zip", members + [("MANIFEST.json", json.dumps(manifest))])
+                self.assertFalse(backup.verify(path)["ok"], label)
+        not_json = self.raw_archive("m-notjson.zip", members + [("MANIFEST.json", "{nope")])
+        self.assertFalse(backup.verify(not_json)["ok"])
+
+    def test_unexpected_or_duplicate_members_are_rejected(self):
+        with zipfile.ZipFile(self.make_archive_again()) as z:
+            members = [(n, z.read(n)) for n in z.namelist()]
+        for label, extra in {"traversal": "../escape.txt", "nested": "uploads/sub/x.jpg", "root file": "notes.txt"}.items():
+            with self.subTest(label):
+                path = self.raw_archive(f"x-{label.replace(' ', '-')}.zip", members + [(extra, b"x")])
+                report = backup.verify(path)
+                self.assertFalse(report["ok"])
+                self.assertTrue(any("unexpected member" in p for p in report["problems"]), report["problems"])
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")                            # the zip module warns about the duplicate name
+            dup = self.raw_archive("dup.zip", members + [("uploads/a1.jpg", b"different bytes")])
+        self.assertFalse(backup.verify(dup)["ok"])
+
+    def test_create_refuses_a_missing_uploads_directory(self):
+        with self.assertRaises(backup.BackupError):
+            backup.create(self.src_db, self.tmp / "no-such-folder", self.out)
+        self.assertEqual(backup.main(["create", "--db", str(self.src_db), "--uploads", str(self.tmp / "no-such-folder"),
+                                      "--out", str(self.out)]), 1)
+        self.assertEqual(list(self.out.glob("*.zip")) if self.out.exists() else [], [])
+
+    def test_create_leaves_no_partial_file_behind(self):
+        archive = self.make_archive()
+        self.assertEqual([p.name for p in self.out.iterdir()], [archive.name])
+
+    def lose_a_photo_then_back_up(self):
+        (main.UPLOADS_DIR / "b1.webp").unlink()                       # an entry still points at it
+        return self.make_archive_again()
+
+    def test_a_missing_photo_makes_the_archive_incomplete(self):
+        archive = self.lose_a_photo_then_back_up()
+        report = backup.verify(archive)
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["problems"], [])                      # internally consistent ...
+        self.assertEqual(len(report["incomplete"]), 1)                # ... but not a whole backup
+        self.assertIn("b1.webp", report["incomplete"][0])
+        self.assertEqual(report["manifest"]["photos_referenced_but_missing"], ["b1.webp"])
+
+    def test_an_incomplete_archive_exits_2_and_cannot_be_restored_by_default(self):
+        archive = self.lose_a_photo_then_back_up()
+        self.assertEqual(backup.main(["verify", str(archive)]), 2)
+        self.assertEqual(backup.main(["create", "--db", str(self.src_db), "--uploads", str(main.UPLOADS_DIR),
+                                      "--out", str(self.tmp / "other-out")]), 2)
+        target = self.tmp / "refused"
+        self.assertEqual(backup.main(["restore", str(archive), "--db", str(target / "a.db"), "--uploads", str(target / "u")]), 1)
+        self.assertFalse(target.exists())
+        # disaster recovery can still take what exists, and says so
+        result = backup.restore(archive, target / "a.db", target / "u", allow_incomplete=True)
+        self.assertEqual(len(result["incomplete"]), 1)
+        self.assertEqual(backup.main(["restore", str(archive), "--db", str(self.tmp / "dr" / "a.db"),
+                                      "--uploads", str(self.tmp / "dr" / "u"), "--allow-incomplete"]), 0)
+
+    def test_a_manifest_that_hides_a_missing_photo_is_still_caught(self):
+        """The database inside the archive is the authority, not the manifest's own claim."""
+        archive = self.lose_a_photo_then_back_up()
+        with zipfile.ZipFile(archive) as z:
+            members = [(n, z.read(n)) for n in z.namelist() if n != "MANIFEST.json"]
+            manifest = json.loads(z.read("MANIFEST.json"))
+        manifest["photos_referenced_but_missing"] = []
+        lying = self.raw_archive("lying.zip", members + [("MANIFEST.json", json.dumps(manifest))])
+        self.assertFalse(backup.verify(lying)["ok"])
+        self.assertEqual(len(backup.verify(lying)["incomplete"]), 1)
+
+    # ---------- fingerprints: "was anything written during the backup window?" ----------
+    def fp(self, db=None, uploads=None):
+        return backup.fingerprint(db or self.src_db, uploads or main.UPLOADS_DIR)
+
+    def test_fingerprints_before_and_after_create_are_equal_when_nothing_wrote(self):
+        before = self.fp()
+        self.make_archive()
+        after = self.fp()
+        self.assertEqual(backup.compare_fingerprints(before, after, same_db=True), [])
+        self.assertEqual(set(before["photos"]), set(self.photos))
+
+    def test_a_write_during_the_window_is_noticed(self):
+        before = self.fp()
+        with db.get_conn() as conn:
+            db.add_water(conn, self.a, 250, "2026-10-21T10:00:00")
+        self.assertTrue(any("database file changed" in p for p in backup.compare_fingerprints(before, self.fp(), same_db=True)))
+        (main.UPLOADS_DIR / "late.jpg").write_bytes(b"arrived during the window")
+        problems = backup.compare_fingerprints(before, self.fp(), same_db=True)
+        self.assertTrue(any("only in the second: late.jpg" in p for p in problems), problems)
+
+    def test_a_restored_uploads_folder_matches_the_source_photo_for_photo(self):
+        source = self.fp()
+        archive = self.make_archive()
+        new_db, new_up = self.tmp / "fp-restored" / "calorie_scanner.db", self.tmp / "fp-restored" / "uploads"
+        backup.restore(archive, new_db, new_up)
+        restored = self.fp(new_db, new_up)
+        self.assertEqual(backup.compare_fingerprints(source, restored), [])           # same photos, byte for byte
+        self.assertNotEqual(source["db_sha256"], restored["db_sha256"])                # the db file itself is a fresh copy
+        (new_up / "a1.jpg").write_bytes(b"x")
+        self.assertTrue(any("photo differs: a1.jpg" in p for p in backup.compare_fingerprints(source, self.fp(new_db, new_up))))
+
+    def test_backup_works_from_read_only_files(self):
+        """The server procedure mounts the live volume read-only; a read-only database file must still be backed up."""
+        import os
+        import stat
+        paths = [self.src_db] + [p for p in main.UPLOADS_DIR.iterdir()]
+        for p in paths:
+            os.chmod(p, stat.S_IREAD)
+        try:
+            archive = self.make_archive()
+            fp = self.fp()
+        finally:
+            for p in paths:
+                os.chmod(p, stat.S_IWRITE | stat.S_IREAD)
+        self.assertTrue(backup.verify(archive)["ok"])
+        self.assertEqual(set(fp["photos"]), set(self.photos))
+
+    def test_fingerprint_command_line(self):
+        a, b = self.tmp / "fa.json", self.tmp / "fb.json"
+        args = ["--db", str(self.src_db), "--uploads", str(main.UPLOADS_DIR)]
+        self.assertEqual(backup.main(["fingerprint", *args, "--out", str(a)]), 0)
+        self.assertEqual(backup.main(["fingerprint", *args, "--out", str(b)]), 0)
+        self.assertEqual(backup.main(["compare-fingerprint", str(a), str(b), "--same-db"]), 0)
+        with db.get_conn() as conn:
+            db.add_water(conn, self.a, 250, "2026-10-21T10:00:00")
+        self.assertEqual(backup.main(["fingerprint", *args, "--out", str(b)]), 0)
+        self.assertEqual(backup.main(["compare-fingerprint", str(a), str(b), "--same-db"]), 1)
+        self.assertEqual(backup.main(["compare-fingerprint", str(a), str(b)]), 0)      # photos alone are still equal
+        self.assertEqual(backup.main(["compare-fingerprint", str(a), str(self.tmp / "none.json")]), 1)
+        self.assertEqual(backup.main(["fingerprint", "--db", str(self.tmp / "none.db"), "--uploads", str(main.UPLOADS_DIR)]), 1)
 
     def test_manifest_lists_every_file_with_a_hash(self):
         archive = self.make_archive()

@@ -42,3 +42,29 @@ test("display is a pure function of the canonical metric value: repeated flips c
   for (let i = 0; i < 100; i++) assert.equal(JSON.stringify(shownImperial()), first);
   assert.deepEqual(canon, { heightCm: 178, weightKg: 65 });
 });
+
+test("canonAfterEdit: only the edited value is recomputed, the other is returned exactly as it was", () => {
+  const canon = { heightCm: 178, weightKg: 80 };
+  // imperial, user types inches: weight stays 80 (not 176.4 lb -> 80.01 kg)
+  assert.deepEqual(U.canonAfterEdit(canon, "imperial", "height", { heightMain: 5, heightIn: 11, weight: 176.4 }),
+    { heightCm: 180.3, weightKg: 80 });
+  // imperial, user types pounds: height stays 178 (not 5 ft 10.1 in -> 178.1 cm)
+  assert.deepEqual(U.canonAfterEdit(canon, "imperial", "weight", { heightMain: 5, heightIn: 10.1, weight: 180 }),
+    { heightCm: 178, weightKg: 81.65 });
+  // metric: typed value is taken as is
+  assert.deepEqual(U.canonAfterEdit(canon, "metric", "height", { heightMain: 181, heightIn: null, weight: 80 }),
+    { heightCm: 181, weightKg: 80 });
+  assert.deepEqual(U.canonAfterEdit(canon, "metric", "weight", { heightMain: 178, heightIn: null, weight: 79.5 }),
+    { heightCm: 178, weightKg: 79.5 });
+  // an emptied field becomes null; an unknown field changes nothing; the input object is not mutated
+  assert.deepEqual(U.canonAfterEdit(canon, "imperial", "weight", { heightMain: 5, heightIn: 10.1, weight: null }),
+    { heightCm: 178, weightKg: null });
+  assert.deepEqual(U.canonAfterEdit(canon, "metric", "other", {}), { heightCm: 178, weightKg: 80 });
+  assert.deepEqual(canon, { heightCm: 178, weightKg: 80 });
+});
+
+test("canonAfterEdit: inches left empty count as 0, empty feet clears the height", () => {
+  const canon = { heightCm: 178, weightKg: 80 };
+  assert.equal(U.canonAfterEdit(canon, "imperial", "height", { heightMain: 6, heightIn: null, weight: 176.4 }).heightCm, 182.9);
+  assert.equal(U.canonAfterEdit(canon, "imperial", "height", { heightMain: null, heightIn: 10, weight: 176.4 }).heightCm, null);
+});

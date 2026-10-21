@@ -61,23 +61,30 @@ function numOrNull(id) {
   return v === "" ? null : Number(v);
 }
 
-// Runs one write behind a single-flight guard (keyed by the button, or by method+path when there is no
-// button) and checks the outcome. Returns the api result, or undefined if an identical write is already
-// in flight. On failure it shows why and returns the failed result; callers leave their sheet open and
-// their fields untouched, so nothing the user typed is lost. Nothing is ever retried automatically.
-async function write(btn, method, path, body, { form, quiet } = {}) {
-  return guard(btn || `${method} ${path}`, async () => {
-    const wasDisabled = btn ? btn.disabled : false;
-    if (btn) btn.disabled = true;
-    try {
-      const result = await api.request(path, { method, json: body === null ? undefined : body, form, quiet });
-      if (!result.ok && !quiet) toast(failureMessage(result));
-      return result;
-    } finally {
-      if (btn) btn.disabled = wasDisabled;
-    }
-  });
+// One write, no guard of its own: disables the button while it runs, shows why on failure and returns the
+// api result. Callers that already hold a guard (a read-then-write handler) call this directly.
+async function sendWrite(btn, method, path, body, { form, quiet } = {}) {
+  const wasDisabled = btn ? btn.disabled : false;
+  if (btn) btn.disabled = true;
+  try {
+    const result = await api.request(path, { method, json: body === null ? undefined : body, form, quiet });
+    if (!result.ok && !quiet) toast(failureMessage(result));
+    return result;
+  } finally {
+    if (btn) btn.disabled = wasDisabled;
+  }
 }
+
+// Runs one write behind a single-flight guard (keyed by `key`, else the button, else method+path) and
+// checks the outcome. Returns the api result, or undefined if an identical write is already in flight.
+// On failure it shows why and returns the failed result; callers leave their sheet open and their fields
+// untouched, so nothing the user typed is lost. Nothing is ever retried automatically.
+function write(btn, method, path, body, opts = {}) {
+  return guard(opts.key || btn || `${method} ${path}`, () => sendWrite(btn, method, path, body, opts));
+}
+// Every change to the targets (apply, apply a suggestion, save) shares this key, so two of them can never
+// interleave — a suggestion is a delta on the CURRENT targets and must not be read twice before being written.
+const GOALS_WRITE = "goals-write";
 const wrote = (result) => !!(result && result.ok);
 
 // ---------- Theme ----------
@@ -1083,19 +1090,16 @@ function renderUnitFields() {
   $("weightKg").value = weightKg != null ? CSUnits.kgToLb(weightKg) : "";
 }
 
-function syncCanonFromFields() {
-  const h = numOrNull("heightCm");
-  const inch = numOrNull("heightIn");
-  const w = numOrNull("weightKg");
-  if (state.units === "metric") {
-    state.canon.heightCm = h;
-    state.canon.weightKg = w;
-  } else {
-    state.canon.heightCm = h === null ? null : CSUnits.feetInchesToCm(h, inch || 0);
-    state.canon.weightKg = w === null ? null : CSUnits.lbToKg(w);
-  }
+// Only the canonical value behind the field the user just edited is replaced; the other one is left exactly
+// as it was (re-deriving it from its rounded imperial display would nudge it: 80 kg shows as 176.4 lb, which
+// is 80.01 kg when converted back).
+function syncCanonFromField(edited) {
+  state.canon = CSUnits.canonAfterEdit(state.canon, state.units, edited, {
+    heightMain: numOrNull("heightCm"), heightIn: numOrNull("heightIn"), weight: numOrNull("weightKg"),
+  });
 }
-["heightCm", "heightIn", "weightKg"].forEach((id) => $(id).addEventListener("input", syncCanonFromFields));
+[["heightCm", "height"], ["heightIn", "height"], ["weightKg", "weight"]].forEach(([id, edited]) =>
+  $(id).addEventListener("input", () => syncCanonFromField(edited)));
 
 document.querySelectorAll(".unit-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1246,7 +1250,7 @@ $("applyGoalsBtn").addEventListener("click", async () => {
       fat_g: state.lastTargets.fat_g,
       water_ml: state.lastTargets.water_ml,
     },
-  });
+  }, { key: GOALS_WRITE });
   if (!wrote(result)) return;
   toast(t("goals_applied"));
   loadGoalsForm();
@@ -1348,7 +1352,7 @@ function renderAdaptiveTdee(data) {
       protein_g: state.lastAdaptiveTdee.protein_g,
       carbs_g: state.lastAdaptiveTdee.carbs_g,
       fat_g: state.lastAdaptiveTdee.fat_g,
-    });
+    }, { key: GOALS_WRITE });
     if (!wrote(result)) return;
     toast(t("tdee_adaptive_applied_toast"));
     loadGoalsForm();
@@ -1359,38 +1363,50 @@ function renderAdaptiveTdee(data) {
     btn.addEventListener("click", (ev) => ev.target.closest(".suggestion-card").remove())
   );
   el.querySelectorAll(".apply-suggestion-btn").forEach((btn) =>
-    btn.addEventListener("click", async (ev) => {
+    btn.addEventListener("click", (ev) => {
       const card = ev.target.closest(".suggestion-card");
       const delta = Number(btn.dataset.delta);
       const prioritizeCarbs = btn.dataset.prioritizeCarbs === "true";
       const proteinFloor = Number(btn.dataset.proteinFloor) || 0;
-      const goalsRes = await apiFetch("/api/goals");
-      if (!goalsRes.ok) return;
-      const goals = await goalsRes.json();
-      const newCalories = goals.calories + delta;
+      // The guard covers the whole read-modify-write. A suggestion is a delta on the targets as they are
+      // NOW, so the read must not be repeatable by a second tap while the first is still on its way.
+      return guard(GOALS_WRITE, async () => {
+        const wasDisabled = btn.disabled;
+        btn.disabled = true;
+        try {
+          const goalsRes = await apiFetch("/api/goals");
+          if (!goalsRes.ok) { toast(t("something_wrong")); return; }
+          const goals = await goalsRes.json();
+          const newCalories = goals.calories + delta;
 
-      // Mirrors nutrition.apply_calorie_adjustment() on the backend: fat_spike suggestions
-      // hold protein at its floor and take the cut out of fat (floored at 40g) instead of
-      // carbs; every other suggestion keeps protein/fat fixed and lets carbs absorb the delta.
-      let proteinG = goals.protein_g;
-      let fatG = goals.fat_g;
-      if (prioritizeCarbs) {
-        proteinG = Math.max(proteinG, proteinFloor);
-        fatG = Math.max(fatG + delta / 9, 40);
-      }
-      const carbsG = Math.round(Math.max(newCalories - proteinG * 4 - fatG * 9, 0) / 4);
+          // Mirrors nutrition.apply_calorie_adjustment() on the backend: fat_spike suggestions
+          // hold protein at its floor and take the cut out of fat (floored at 40g) instead of
+          // carbs; every other suggestion keeps protein/fat fixed and lets carbs absorb the delta.
+          let proteinG = goals.protein_g;
+          let fatG = goals.fat_g;
+          if (prioritizeCarbs) {
+            proteinG = Math.max(proteinG, proteinFloor);
+            fatG = Math.max(fatG + delta / 9, 40);
+          }
+          const carbsG = Math.round(Math.max(newCalories - proteinG * 4 - fatG * 9, 0) / 4);
 
-      const result = await write(btn, "PUT", "/api/goals", {
-        calories: Math.round(newCalories),
-        protein_g: Math.round(proteinG),
-        carbs_g: carbsG,
-        fat_g: Math.round(fatG),
+          const result = await sendWrite(btn, "PUT", "/api/goals", {
+            calories: Math.round(newCalories),
+            protein_g: Math.round(proteinG),
+            carbs_g: carbsG,
+            fat_g: Math.round(fatG),
+          });
+          if (!wrote(result)) return;
+          toast(t("suggestion_applied_toast"));
+          card.remove();
+          loadGoalsForm();
+          loadToday();
+        } catch (err) {
+          toast(t("something_wrong"));      // the read never answered; nothing was written, the card stays
+        } finally {
+          btn.disabled = wasDisabled;
+        }
       });
-      if (!wrote(result)) return;
-      toast(t("suggestion_applied_toast"));
-      card.remove();
-      loadGoalsForm();
-      loadToday();
     })
   );
 }
@@ -1501,7 +1517,7 @@ $("saveGoalsBtn").addEventListener("click", async () => {
     carbs_g: numOrNull("goalCarbs"),
     fat_g: numOrNull("goalFat"),
     water_ml: numOrNull("goalWater"),
-  });
+  }, { key: GOALS_WRITE });
   if (!wrote(result)) return;
   toast(t("goals_saved"));
   loadToday();
