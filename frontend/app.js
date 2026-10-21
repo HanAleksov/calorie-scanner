@@ -4,6 +4,10 @@ const state = {
   sessionUserId: null,                          // who this page was signed in as (to spot a profile change)
   canon: { heightCm: null, weightKg: null },    // canonical METRIC values behind the Plan form
   today: null,                                  // last /api/today payload (to re-render targets without a refetch)
+  userName: "",                                 // for the avatar initial
+  firstTodayRender: true,                       // no count-up / entry animation on the very first paint
+  seenEntryIds: new Set(),                      // entries already on screen (only NEW ones animate in)
+  legionIdle: "idle",                           // which idle line fits the real totals
 };
 
 const $ = (id) => document.getElementById(id);
@@ -87,31 +91,35 @@ function write(btn, method, path, body, opts = {}) {
 const GOALS_WRITE = "goals-write";
 const wrote = (result) => !!(result && result.ok);
 
-// ---------- Theme ----------
-function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  localStorage.setItem("theme", theme);
+// ---------- Appearance: theme (light/dark/system) and style (Normal / Roman Legion) are independent ----------
+const THEME_COLOR = {
+  "normal-light": "#FBF6EF", "normal-dark": "#111214", "roman-light": "#EFE3CF", "roman-dark": "#170B0C",
+};
+const reduceMotionQuery = typeof matchMedia === "function" ? matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
+const reduceMotion = () => !!reduceMotionQuery.matches;
+
+function refreshAppearanceControls() {
+  if (typeof look === "undefined") return;
+  document.querySelectorAll("[data-theme-choice]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.themeChoice === look.theme)));
+  document.querySelectorAll("[data-mode-choice]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.modeChoice === look.mode)));
+  const meta = $("themeColorMeta");
+  if (meta) meta.setAttribute("content", THEME_COLOR[`${look.mode}-${look.effectiveTheme()}`]);
 }
-(function initTheme() {
-  const saved = localStorage.getItem("theme");
-  if (saved) applyTheme(saved);
-})();
-$("themeBtn").addEventListener("click", () => {
-  const current = document.documentElement.getAttribute("data-theme") ||
-    (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  applyTheme(current === "dark" ? "light" : "dark");
-});
+document.querySelectorAll("[data-theme-choice]").forEach((b) => b.addEventListener("click", () => look.setTheme(b.dataset.themeChoice)));
+document.querySelectorAll("[data-mode-choice]").forEach((b) => b.addEventListener("click", () => look.setMode(b.dataset.modeChoice)));
 
 // ---------- Language ----------
 function refreshLangBtn() {
   const label = currentLang() === "bg" ? "BG" : "EN";
-  $("langBtn").textContent = label;
+  $("langValue").textContent = label;
   $("langBtnGate").textContent = label;
 }
 function toggleLanguage() {
   localStorage.setItem("lang", currentLang() === "bg" ? "en" : "bg");
   applyStaticTranslations();
   refreshLangBtn();
+  updateScreenHeader();
+  legion.reset();
   if (!$("appRoot").classList.contains("hidden")) {
     loadToday();
     if (document.getElementById("tab-history").classList.contains("active")) loadHistory();
@@ -127,10 +135,32 @@ refreshLangBtn();
 
 // ---------- Tabs ----------
 function switchTab(name) {
-  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  const changed = document.body.dataset.tab !== name;
+  document.body.dataset.tab = name;
+  document.querySelectorAll(".tab-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === name);
+    if (b.dataset.tab === name) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
   document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === `tab-${name}`));
+  updateScreenHeader();
+  if (changed && typeof window.scrollTo === "function") window.scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" });
   if (name === "history") loadHistory();
   if (name === "plan") loadPlanTab();
+}
+const TAB_TITLE_KEY = { today: "tab_today", history: "tab_history", plan: "tab_plan" };
+function activeTab() { return document.body.dataset.tab || "today"; }
+function updateScreenHeader() {
+  const tab = activeTab();
+  $("screenTitle").textContent = t(TAB_TITLE_KEY[tab]);
+  const sub = $("screenSub");
+  if (tab === "today") {
+    const day = state.today && state.today.date ? new Date(state.today.date + "T00:00:00") : new Date();
+    sub.textContent = day.toLocaleDateString(currentLang() === "bg" ? "bg-BG" : undefined, { day: "numeric", month: "long" });
+  } else {
+    sub.textContent = "";
+  }
+  const initial = (state.userName || "").trim().charAt(0).toUpperCase();
+  $("avatarInitial").textContent = initial || "•";
 }
 document.querySelectorAll(".tab-btn").forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
@@ -293,12 +323,24 @@ function showApp() {
   $("appRoot").classList.remove("hidden");
   applyStaticTranslations();
   refreshLangBtn();
+  switchTab(activeTab());
+  loadMe();
   loadToday();
   maybeShowWelcome();
   maybeShowWhatsNew();
 }
 
+async function loadMe() {
+  try {
+    const res = await apiFetch("/api/users/me");
+    if (!res.ok) return;
+    state.userName = (await res.json()).name || "";
+    updateScreenHeader();
+  } catch (e) { /* the avatar just keeps its placeholder */ }
+}
+
 $("switchUserBtn").addEventListener("click", async () => {
+  if (!confirm(t("switch_user_confirm"))) return;
   const result = await write($("switchUserBtn"), "DELETE", "/api/session");
   if (!wrote(result)) return;   // still signed in; the reason was shown
   location.reload();            // fresh page: nothing of the previous profile survives in memory or on screen
@@ -352,6 +394,8 @@ async function openSettings() {
   const me = await meRes.json();
   const goals = await goalsRes.json();
   $("settingsName").value = me.name;
+  state.userName = me.name;
+  updateScreenHeader();
   $("settingsOldPinField").classList.toggle("hidden", !me.has_pin);
   $("settingsOldPin").value = "";
   $("settingsNewPin").value = "";
@@ -376,7 +420,11 @@ $("settingsSaveNameBtn").addEventListener("click", async () => {
     return;
   }
   const result = await write($("settingsSaveNameBtn"), "PUT", "/api/users/me", { name });
-  if (wrote(result)) toast(t("name_updated"));
+  if (wrote(result)) {
+    state.userName = name;
+    updateScreenHeader();
+    toast(t("name_updated"));
+  }
 });
 
 $("settingsSavePinBtn").addEventListener("click", async () => {
@@ -418,7 +466,6 @@ $("deleteProfileBtn").addEventListener("click", async () => {
 });
 
 // ================== TODAY ==================
-const RING_CIRCUMFERENCE = 2 * Math.PI * 62;
 const UNDER_TARGET_THRESHOLD = 0.85; // gain users: flag calories/macros as "needs attention" only below 85% of goal
 
 async function loadToday() {
@@ -435,6 +482,11 @@ async function loadToday() {
   renderWater(data.water_ml, data.goals.water_ml);
   renderGapRecommender(data.totals.calories, data.goals.calories);
   renderDayMark(data);
+  $("diaryCount").textContent = data.entries.length === 1 ? t("entries_one") : t("entries_many", { n: data.entries.length });
+  updateScreenHeader();
+  state.legionIdle = CSLegion.idleKind({ entries: data.entries.length, calories: data.totals.calories, goal: data.goals.calories });
+  if (!legion.current) renderLegion(null);
+  state.firstTodayRender = false;
   loadCachedTip();
 }
 
@@ -516,17 +568,42 @@ function applyGoalAwareClass(el, value, goal) {
   }
 }
 
+// A number that changes after a save counts up to its new value (instant with reduced motion / first paint).
+function setCounter(el, to, animate) {
+  const from = Number(el.dataset.v);
+  el.dataset.v = String(to);
+  if (!animate || reduceMotion() || !Number.isFinite(from) || from === to || typeof requestAnimationFrame !== "function") {
+    el.textContent = to;
+    return;
+  }
+  const start = performance.now();
+  const ms = 700;
+  const tick = (now) => {
+    const k = Math.min(1, (now - start) / ms);
+    el.textContent = Math.round(from + (to - from) * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+  el.classList.remove("pulse");
+  void el.offsetWidth;
+  el.classList.add("pulse");
+}
+
 function renderTotals(totals, goals) {
   const remaining = Math.max(0, goals.calories - totals.calories);
   const pct = goals.calories ? Math.min(1, totals.calories / goals.calories) : 0;
+  const animate = !state.firstTodayRender;
 
-  $("ringCalsLeft").textContent = remaining;
+  setCounter($("ringCalsLeft"), remaining, animate);
   $("totalCals").textContent = totals.calories;
   $("calGoalDisplay").textContent = goals.calories;
 
-  const ring = $("calRingFill");
-  ring.style.strokeDashoffset = RING_CIRCUMFERENCE * (1 - pct);
-  applyGoalAwareClass(ring, totals.calories, goals.calories);
+  const fill = $("calBarFill");
+  fill.style.width = Math.round(pct * 100) + "%";
+  applyGoalAwareClass(fill, totals.calories, goals.calories);
+  const bar = $("calBar");
+  bar.setAttribute("aria-valuenow", String(Math.round(pct * 100)));
+  bar.setAttribute("aria-valuetext", t("kcal_progress_text", { eaten: totals.calories, goal: goals.calories }));
 
   setMacro("protein", totals.protein_g, goals.protein_g);
   setMacro("carbs", totals.carbs_g, goals.carbs_g);
@@ -542,8 +619,15 @@ function renderEnergy(avg) {
 }
 
 // ---------- Water ----------
+function litres(ml) {
+  return (ml / 1000).toLocaleString(currentLang() === "bg" ? "bg-BG" : "en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
 function renderWater(ml, goalMl) {
-  $("waterVal").textContent = `${ml}/${goalMl}ml`;
+  $("waterVal").textContent = `${litres(ml)} / ${litres(goalMl)} ${t("litre_unit")}`;
+  const pct = goalMl ? Math.min(100, Math.round((ml / goalMl) * 100)) : 0;
+  $("waterFill").style.width = pct + "%";
+  $("waterBar").setAttribute("aria-valuenow", String(pct));
+  $("waterBar").setAttribute("aria-valuetext", `${litres(ml)} / ${litres(goalMl)} ${t("litre_unit")}`);
 }
 
 async function addWater(ml) {
@@ -587,59 +671,65 @@ async function generateTip() {
 $("getTipBtn").addEventListener("click", generateTip);
 
 function setMacro(name, value, goal) {
-  $(`${name}Val`).textContent = `${value}/${goal}g`;
+  $(`${name}Val`).textContent = `${value} / ${goal} ${t("gram_unit")}`;
   const pct = goal ? Math.min(100, Math.round((value / goal) * 100)) : 0;
   const fill = $(`${name}Fill`);
   fill.style.width = pct + "%";
   applyGoalAwareClass(fill, value, goal);
+  const bar = $(`${name}Bar`);
+  bar.setAttribute("aria-valuenow", String(pct));
+  bar.setAttribute("aria-valuetext", `${value} / ${goal} ${t("gram_unit")}`);
 }
 
 const MEAL_LABEL_KEY = { breakfast: "meal_breakfast", lunch: "meal_lunch", dinner: "meal_dinner", snack: "meal_snack" };
+
+function entryTitle(e) {
+  const names = e.items.map((i) => i.name).filter(Boolean).join(", ");
+  return names || t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack");
+}
 
 function renderEntries(entries) {
   const list = $("entriesList");
   if (!entries.length) {
     list.innerHTML = `<div class="empty-state">${t("no_entries_line1")}<br>${t("no_entries_line2")}</div>`;
+    state.seenEntryIds = new Set();
     return;
   }
+  const animateNew = !state.firstTodayRender && !reduceMotion();
+  const fresh = new Set(entries.filter((e) => !state.seenEntryIds.has(e.id)).map((e) => e.id));
   list.innerHTML = entries
     .slice()
-    .reverse()
     .map((e) => {
       const thumb = e.image_path
-        ? `<img class="thumb" src="/uploads/${e.image_path}" alt="">`
-        : `<div class="thumb-placeholder">${ICON.edit}</div>`;
-      const itemNames = e.items.map((i) => i.name).join(", ");
+        ? `<img class="thumb" src="/uploads/${e.image_path}" alt="" loading="lazy">`
+        : `<div class="thumb-placeholder">${ICON.plate}</div>`;
       const lowConf = e.confidence === "low" ? `<span class="badge low-confidence">${t("low_confidence")}</span>` : "";
       const energyBadge = e.energy_score != null ? `<span class="badge energy-badge">${ICON.zap}${e.energy_score}/5</span>` : "";
       const time = e.created_at.slice(11, 16);
       const noteLine = e.notes ? `<div class="entry-note">${ICON.note} ${escapeHtml(e.notes)}</div>` : "";
+      const title = escapeHtml(entryTitle(e));
       return `
-        <div class="entry" data-id="${e.id}">
+        <div class="entry${animateNew && fresh.has(e.id) ? " in" : ""}" data-id="${e.id}">
           ${thumb}
           <div class="entry-body">
-            <div class="entry-title">${e.total_calories} kcal <span class="badge">${t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack")}</span> ${energyBadge} ${lowConf}</div>
-            <div class="entry-items">${escapeHtml(itemNames)} · ${time}</div>
-            <div class="entry-macros">P ${e.protein_g}g · C ${e.carbs_g}g · F ${e.fat_g}g</div>
+            <div class="entry-title">${title}</div>
+            <div class="entry-kcal">${e.total_calories} ${t("kcal_unit")}</div>
+            <div class="entry-meta"><span class="badge">${t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack")}</span><span>${time}</span><span>${t("protein_short")} ${e.protein_g} · ${t("carbs_short")} ${e.carbs_g} · ${t("fat_short")} ${e.fat_g}</span>${energyBadge}${lowConf}</div>
             ${noteLine}
           </div>
           <div class="entry-actions">
-            <button class="favorite-btn" title="${t("save_favorite")}">${ICON.star}</button>
-            <button class="edit-btn" title="${t("edit")}">${ICON.edit}</button>
-            <button class="delete-btn" title="${t("delete")}">${ICON.trash}</button>
+            <button class="edit-btn" type="button" aria-label="${t("edit")}: ${title}" title="${t("edit")}">${ICON.edit}</button>
           </div>
         </div>`;
     })
     .join("");
+  state.seenEntryIds = new Set(entries.map((e) => e.id));
 
-  list.querySelectorAll(".favorite-btn").forEach((btn) =>
-    btn.addEventListener("click", (ev) => saveAsFavorite(ev.target.closest(".entry").dataset.id))
+  list.querySelectorAll(".entry").forEach((row) =>
+    row.addEventListener("click", () => openEdit(row.dataset.id))
   );
   list.querySelectorAll(".edit-btn").forEach((btn) =>
-    btn.addEventListener("click", (ev) => openEdit(ev.target.closest(".entry").dataset.id))
-  );
-  list.querySelectorAll(".delete-btn").forEach((btn) =>
-    btn.addEventListener("click", (ev) => deleteEntry(ev.target.closest(".entry").dataset.id))
+    btn.addEventListener("click", (ev) => { ev.stopPropagation(); openEdit(ev.target.closest(".entry").dataset.id); })
   );
 }
 
@@ -702,6 +792,7 @@ async function logFavorite(favoriteId) {
   if (!wrote(result)) return;
   toast(t("logged_from_favorite_toast"));
   $("favoritesModal").classList.add("hidden");
+  afterMealLogged();
   loadToday();
 }
 
@@ -731,7 +822,7 @@ async function openEdit(id) {
         (item, i) => `
         <div class="edit-item-row">
           <span class="item-name">${escapeHtml(item.name)}</span>
-          <input type="number" class="edit-item-grams" data-idx="${i}" value="${item.est_grams ?? ""}">
+          <input type="number" class="edit-item-grams" data-idx="${i}" value="${item.est_grams ?? ""}" aria-label="${escapeHtml(item.name)} — ${t("field_grams")}">
         </div>`
       )
       .join("");
@@ -743,6 +834,15 @@ async function openEdit(id) {
   $("editModal").classList.remove("hidden");
 }
 $("editCancelBtn").addEventListener("click", () => $("editModal").classList.add("hidden"));
+$("editFavoriteBtn").addEventListener("click", () => saveAsFavorite(state.entryBeingEdited));
+$("editDeleteBtn").addEventListener("click", async () => {
+  const id = state.entryBeingEdited;
+  if (!confirm(t("delete_confirm"))) return;
+  const result = await write($("editDeleteBtn"), "DELETE", `/api/entries/${id}`);
+  if (!wrote(result)) return;   // the editor stays open
+  $("editModal").classList.add("hidden");
+  loadToday();
+});
 
 $("editSaveBtn").addEventListener("click", async () => {
   const id = state.entryBeingEdited;
@@ -845,6 +945,7 @@ $("photoAnalyzeBtn").addEventListener("click", () => guard("photo-analyze", asyn
     }
     toast(t("logged_kcal", { kcal: result.data.total_calories, confidence: result.data.confidence }));
     closePhotoReview();
+    afterMealLogged();
     loadToday();
   } finally {
     btn.innerHTML = originalHtml;
@@ -873,6 +974,7 @@ $("manualSaveBtn").addEventListener("click", async () => {
   if (!wrote(result)) return;   // keep the sheet and the fields: a failed save must not eat the entry
   $("manualModal").classList.add("hidden");
   ["manualDesc", "manualCals", "manualProtein", "manualCarbs", "manualFat"].forEach((id) => ($(id).value = ""));
+  afterMealLogged();
   loadToday();
 });
 
@@ -1467,6 +1569,7 @@ async function logPlanMeal(idx) {
   if (!wrote(result)) return;
   toast(t("logged_from_plan_toast"));
   switchTab("today");
+  afterMealLogged();
   loadToday();
 }
 
@@ -1523,6 +1626,190 @@ $("saveGoalsBtn").addEventListener("click", async () => {
   loadToday();
 });
 
+// ================== ADD FOOD (one sheet for photo / manual / favourites) ==================
+// The three actions keep their own handlers above; this only opens the sheet and gets it out of the way once
+// one of them has been chosen (the chosen action then opens its own sheet or the file picker).
+const closeAddFood = () => $("addFoodModal").classList.add("hidden");
+$("addFoodBtn").addEventListener("click", () => $("addFoodModal").classList.remove("hidden"));
+$("addFoodCloseBtn").addEventListener("click", closeAddFood);
+["takePhotoBtn", "manualEntryBtn", "quickAddBtn"].forEach((id) => $(id).addEventListener("click", closeAddFood));
+$("diaryLink").addEventListener("click", () => switchTab("history"));
+
+// ================== ROMAN LEGION (presentation only) ==================
+// Local lines and reactions: no network, no AI, nothing is stored or written to the user's data. The real meal
+// schedule and meal times are a separate piece of work, so "reminder" and "missing record" exist only as clearly
+// labelled demo reactions; "approval" additionally follows a real, just-completed meal log.
+const legion = CSLegion.createController({ render: (r) => renderLegion(r) });
+const isRoman = () => typeof look !== "undefined" && look.mode === "roman";
+const demoEnabled = () => { try { return localStorage.getItem("legionDemo") !== "0"; } catch (e) { return true; } };
+const DEMO_CHIPS = { remind: { nextMeal: "18:30" }, demand: { nextMeal: "18:30", lastLog: "15:40" } };
+
+function renderLegion(r) {
+  const roman = isRoman();
+  $("legionStage").hidden = !roman;
+  $("legionDemo").hidden = !(roman && demoEnabled());
+  if (!roman) return;
+  const holder = $("legionPortrait");
+  if (!holder.innerHTML) holder.innerHTML = CSLegion.portraitSvg();
+  const reaction = r || CSLegion.reaction(state.legionIdle, currentLang(), 0);
+  const svg = holder.querySelector("svg");
+  if (svg) svg.setAttribute("class", `lg-portrait lg-mood-${reaction.mood}`);
+  const bubble = $("legionBubble");
+  $("legionText").textContent = reaction.text;
+  $("legionDemoTag").hidden = !(r && r.demo);
+  bubble.classList.remove("swap");
+  void bubble.offsetWidth;                       // restart the entrance animation
+  bubble.classList.add("swap");
+  const word = t("legion_demo_word");
+  const chips = r && r.demo ? DEMO_CHIPS[r.kind] : null;
+  $("legionChips").innerHTML = chips
+    ? CSLegion.chipsHtml(
+        { nextMeal: chips.nextMeal && `${chips.nextMeal} · ${word}`, lastLog: chips.lastLog && `${chips.lastLog} · ${word}` },
+        { next: t("legion_next_meal"), last: t("legion_last_record") }, escapeHtml)
+    : "";
+}
+
+function afterMealLogged() {
+  if (isRoman()) legion.show("approve", { lang: currentLang() });
+}
+
+function demoReaction(kind, vars) {
+  legion.show(kind, { lang: currentLang(), demo: true, vars, ms: 20000 });
+}
+$("demoApprove").addEventListener("click", () => demoReaction("approve"));
+$("demoRemind").addEventListener("click", () => demoReaction("remind", { time: "18:30" }));
+$("demoDemand").addEventListener("click", () => demoReaction("demand"));
+$("demoToggle").checked = demoEnabled();
+$("demoToggle").addEventListener("change", (e) => {
+  try { localStorage.setItem("legionDemo", e.target.checked ? "1" : "0"); } catch (err) { /* not remembered */ }
+  renderLegion(legion.current);
+});
+if (typeof look !== "undefined") {
+  look.onChange(() => { refreshAppearanceControls(); legion.reset(); });
+  refreshAppearanceControls();
+}
+renderLegion(null);
+
+// ================== ACCESSIBILITY: labels, dialogs, on-screen keyboard ==================
+// Every visible field gets a programmatic label (the markup pairs <label> and control inside .field).
+function labelFields() {
+  document.querySelectorAll(".field").forEach((f) => {
+    const label = f.querySelector("label");
+    const control = f.querySelector("input, select, textarea");
+    if (label && control && control.id && !label.htmlFor) label.htmlFor = control.id;
+  });
+}
+labelFields();
+
+// Dialogs are opened/closed all over the file by toggling the `hidden` class. Rather than touch every call, one
+// observer gives every sheet the same behaviour: role/aria, focus moves into the sheet and comes back to what
+// opened it, Tab stays inside, Esc closes (through the sheet's own Close/Cancel button, so any cleanup that
+// button does still runs), and the page behind is inert so a screen reader or Tab can't wander off.
+const DIALOG_CLOSE_BUTTON = {
+  addFoodModal: "addFoodCloseBtn", welcomeModal: "welcomeDismissBtn", photoReviewModal: "photoCancelBtn",
+  whatsNewModal: "whatsNewCloseBtn", manualModal: "manualCancelBtn", favoritesModal: "favoritesCloseBtn",
+  editModal: "editCancelBtn", settingsModal: "settingsCloseBtn",
+};
+const dialogs = Array.from(document.querySelectorAll(".modal-backdrop"));
+const isOpen = (m) => !m.classList.contains("hidden");
+const isShown = (el) => !!el && (el.getClientRects ? el.getClientRects().length > 0 : true);
+const openDialogs = () => dialogs.filter(isOpen);
+const wasOpen = new Map();
+const openedFrom = new Map();
+
+function focusables(root) {
+  return Array.from(root.querySelectorAll('button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])'))
+    .filter((el) => !el.disabled && !el.hidden && isShown(el));
+}
+
+function onDialogOpen(modal) {
+  openedFrom.set(modal, document.activeElement);
+  const sheet = modal.querySelector(".modal-sheet");
+  if (sheet) {
+    sheet.setAttribute("tabindex", "-1");
+    sheet.focus({ preventScroll: true });          // the sheet itself: announces its title without raising the keyboard
+  }
+  const root = $("appRoot");
+  root.setAttribute("aria-hidden", "true");
+  root.inert = true;
+}
+
+function onDialogClose(modal) {
+  const stillOpen = openDialogs();
+  if (!stillOpen.length) {
+    const root = $("appRoot");
+    root.removeAttribute("aria-hidden");
+    root.inert = false;
+    const back = openedFrom.get(modal);
+    const target = isShown(back) ? back : (isShown($("addFoodBtn")) ? $("addFoodBtn") : null);
+    if (target && target.focus) target.focus({ preventScroll: true });
+  }
+  openedFrom.delete(modal);
+}
+
+function initDialogs() {
+  dialogs.forEach((modal) => {
+    const title = modal.querySelector("h2");
+    if (title && !title.id) title.id = `${modal.id}Title`;
+    modal.setAttribute("role", "dialog");
+    modal.setAttribute("aria-modal", "true");
+    if (title) modal.setAttribute("aria-labelledby", title.id);
+    wasOpen.set(modal, isOpen(modal));
+  });
+  if (typeof MutationObserver === "function") {
+    const observer = new MutationObserver((records) => {
+      new Set(records.map((r) => r.target)).forEach((modal) => {
+        const now = isOpen(modal);
+        if (now === wasOpen.get(modal)) return;
+        wasOpen.set(modal, now);
+        if (now) onDialogOpen(modal); else onDialogClose(modal);
+      });
+    });
+    dialogs.forEach((modal) => observer.observe(modal, { attributes: true, attributeFilter: ["class"] }));
+  }
+  document.addEventListener("keydown", (e) => {
+    const open = openDialogs();
+    if (!open.length) return;
+    const top = open[open.length - 1];
+    if (e.key === "Escape") {
+      const close = $(DIALOG_CLOSE_BUTTON[top.id]);
+      if (close) { e.preventDefault(); close.click(); }
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const items = focusables(top);
+    if (!items.length) { e.preventDefault(); return; }
+    const first = items[0], last = items[items.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || active === top.querySelector(".modal-sheet"))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+  });
+}
+initDialogs();
+
+// On-screen keyboard: keep the sheet inside the VISIBLE viewport, bring the focused field into view, and hide the
+// floating Add-food button while typing so it can't sit on top of a field.
+(function initKeyboardAwareness() {
+  const vv = typeof window !== "undefined" ? window.visualViewport : null;
+  const root = document.documentElement;
+  if (vv && root && root.style && root.style.setProperty) {
+    const update = () => {
+      root.style.setProperty("--vvh", `${vv.height}px`);
+      root.style.setProperty("--vvt", `${vv.offsetTop}px`);
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || "");
+      document.body.classList.toggle("kb-open", typing && window.innerHeight - vv.height > 120);
+    };
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    update();
+  }
+  document.addEventListener("focusin", (e) => {
+    const el = e.target;
+    if (!el || !el.closest || !el.closest(".modal-sheet") || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    setTimeout(() => el.scrollIntoView && el.scrollIntoView({ block: "center", behavior: reduceMotion() ? "auto" : "smooth" }), 250);
+  });
+})();
+
 // ---------- Bottom-sheet drag-to-dismiss ----------
 function attachSheetDrag(sheetEl, closeFn) {
   const handle = sheetEl.querySelector(".sheet-handle");
@@ -1563,6 +1850,7 @@ function attachSheetDrag(sheetEl, closeFn) {
   document.addEventListener("pointerup", onEnd);
 }
 
+attachSheetDrag($("addFoodModal"), closeAddFood);
 attachSheetDrag($("welcomeModal"), () => $("welcomeModal").classList.add("hidden"));
 attachSheetDrag($("photoReviewModal"), closePhotoReview);
 attachSheetDrag($("whatsNewModal"), () => $("whatsNewModal").classList.add("hidden"));

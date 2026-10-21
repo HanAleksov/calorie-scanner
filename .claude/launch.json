@@ -6,6 +6,12 @@
       "runtimeExecutable": "backend/.venv/Scripts/python",
       "runtimeArgs": ["-m", "uvicorn", "main:app", "--app-dir", "backend", "--host", "0.0.0.0", "--port", "8420"],
       "port": 8420
+    },
+    {
+      "name": "ui-demo",
+      "runtimeExecutable": "backend/.venv/Scripts/python",
+      "runtimeArgs": ["backend/tests/ui_server.py", "8423"],
+      "port": 8423
     }
   ]
 }

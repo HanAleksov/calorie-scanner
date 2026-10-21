@@ -1,6 +1,17 @@
-const CURRENT_APP_VERSION = 12;
+const CURRENT_APP_VERSION = 13;
 
 const WHATS_NEW = [
+  {
+    version: 13,
+    en: [
+      "✨ A fresh look — a calmer Today screen with your calories at a glance, readable macros, meals with photos and water, and one big Add food button that opens photo, manual and favorites in a single panel.",
+      "🎨 Light, dark or system theme, and a new Roman Legion style you can switch on in Settings — independent of each other. The legion style has a stern centurion with a few reactions (in this version they are a preview, clearly marked DEMO).",
+    ],
+    bg: [
+      "✨ Нов вид — по-спокоен екран „Днес“ с калориите накратко, четими макроси, хранения със снимки и вода, и един голям бутон „Добави храна“, който отваря снимка, ръчен запис и любими в един панел.",
+      "🎨 Светла, тъмна или системна тема и нов стил „Римски легион“, който включваш от Настройки — независимо един от друг. Стилът има строг центурион с няколко реакции (в тази версия са преглед, ясно означен като ДЕМО).",
+    ],
+  },
   {
     version: 12,
     en: [

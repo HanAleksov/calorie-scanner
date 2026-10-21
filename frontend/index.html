@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Calorie Scanner</title>
-<meta name="theme-color" content="#e85d2f">
+<meta name="theme-color" content="#FBF6EF" id="themeColorMeta">
+<meta name="color-scheme" content="light dark">
 
 <!-- iOS PWA support -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,6 +18,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="/look.js"></script>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -41,7 +43,7 @@
 
     <div id="pinForm" class="hidden" style="margin-top:14px">
       <p id="pinForLabel" style="font-size:13px;color:var(--text-dim)"></p>
-      <div class="field"><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="pinInput" data-i18n-ph="pin_ph" placeholder="····"></div>
+      <div class="field"><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="pinInput" data-i18n-ph="pin_ph" placeholder="····" data-i18n-aria="pin_label" aria-label="PIN"></div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="pinBackBtn" data-i18n="back">Back</button>
         <button class="btn btn-primary" id="pinUnlockBtn" data-i18n="unlock">Unlock</button>
@@ -51,15 +53,14 @@
 </div>
 
 <div id="appRoot" class="hidden">
-<header>
-  <h1><span class="logo-mark">🍽</span> <span data-i18n="app_name">Calorie Scanner</span></h1>
+<header class="topbar">
+  <div class="topbar-title">
+    <h1 id="screenTitle" data-i18n="tab_today">Today</h1>
+    <p class="topbar-sub" id="screenSub"></p>
+  </div>
   <div class="actions">
-    <button class="icon-btn" id="whatsNewBtn" title="What's new"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></button>
-    <button class="icon-btn" id="settingsBtn" title="Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
-    <button class="icon-btn" id="switchUserBtn" title="Switch user"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></button>
-    <button class="icon-btn" id="langBtn">EN</button>
-    <button class="icon-btn" id="installBtn" style="display:none"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></button>
-    <button class="icon-btn" id="themeBtn"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg></button>
+    <button class="avatar-btn" id="switchUserBtn" type="button" data-i18n-aria="switch_profile" data-i18n-title="switch_profile"><span id="avatarInitial" aria-hidden="true">A</span></button>
+    <button class="icon-btn" id="settingsBtn" type="button" data-i18n-aria="settings_title" data-i18n-title="settings_title"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
   </div>
 </header>
 
@@ -70,57 +71,84 @@
   </div>
 
   <!-- TODAY -->
-  <section class="tab-panel active" id="tab-today">
-    <div class="card hero-card">
-      <div class="ring-wrap">
-        <svg viewBox="0 0 140 140" class="ring-svg">
-          <circle cx="70" cy="70" r="62" class="ring-track"/>
-          <circle cx="70" cy="70" r="62" class="ring-fill" id="calRingFill"/>
-        </svg>
-        <div class="ring-center">
+  <section class="tab-panel active" id="tab-today" aria-labelledby="screenTitle">
+    <div class="card hero-card" id="heroCard">
+      <div class="hero-grid">
+        <div class="hero-kcal">
           <div class="ring-value" id="ringCalsLeft">0</div>
           <div class="ring-label" data-i18n="kcal_left">kcal left</div>
         </div>
+        <div class="legion-stage" id="legionStage" hidden>
+          <div class="lg-portrait-wrap" id="legionPortrait" aria-hidden="true"></div>
+          <div class="lg-bubble" id="legionBubble" role="status" aria-live="polite">
+            <span class="lg-demo-tag" id="legionDemoTag" hidden data-i18n="legion_demo_tag">DEMO</span>
+            <span id="legionText"></span>
+          </div>
+          <span class="lg-rank" data-i18n="legion_rank">Legionary</span>
+        </div>
       </div>
-      <div class="hero-stats">
-        <div class="hero-stat"><span id="totalCals">0</span><small data-i18n="eaten">eaten</small></div>
-        <div class="hero-stat"><span id="calGoalDisplay">2200</span><small data-i18n="goal">goal</small></div>
+      <div class="cal-bar" id="calBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-i18n-aria="kcal_progress">
+        <div class="cal-bar-fill" id="calBarFill"></div>
       </div>
+      <p class="hero-sub"><span id="totalCals">0</span> <span data-i18n="eaten">eaten</span> · <span id="calGoalDisplay">2200</span> <span data-i18n="goal">goal</span></p>
+      <div class="lg-chips" id="legionChips"></div>
       <div class="macros">
         <div class="macro protein">
           <div class="label" data-i18n="protein">Protein</div>
+          <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="proteinBar"><div class="fill" id="proteinFill" style="width:0%"></div></div>
           <div class="value" id="proteinVal">0g</div>
-          <div class="bar"><div class="fill" id="proteinFill" style="width:0%"></div></div>
         </div>
         <div class="macro carbs">
           <div class="label" data-i18n="carbs">Carbs</div>
+          <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="carbsBar"><div class="fill" id="carbsFill" style="width:0%"></div></div>
           <div class="value" id="carbsVal">0g</div>
-          <div class="bar"><div class="fill" id="carbsFill" style="width:0%"></div></div>
         </div>
         <div class="macro fat">
           <div class="label" data-i18n="fat">Fat</div>
+          <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="fatBar"><div class="fill" id="fatFill" style="width:0%"></div></div>
           <div class="value" id="fatVal">0g</div>
-          <div class="bar"><div class="fill" id="fatFill" style="width:0%"></div></div>
         </div>
       </div>
+    </div>
 
-      <div class="wellness-row">
-        <div class="wellness-item">
-          <div class="wellness-label"><svg class="icon-inline" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg> <span data-i18n="water_title">Water</span></div>
-          <div class="wellness-value" id="waterVal">0/2000ml</div>
-          <div class="wellness-actions">
-            <button class="chip-btn chip-btn-remove" id="removeWater250">-250ml</button>
-            <button class="chip-btn" id="addWater250">+250ml</button>
-            <button class="chip-btn" id="addWater500">+500ml</button>
-          </div>
+    <div class="demo-panel" id="legionDemo" hidden role="group" aria-labelledby="legionDemoLabel">
+      <div class="demo-head"><span class="demo-badge" id="legionDemoLabel" data-i18n="legion_demo_tag">DEMO</span><span class="demo-note" data-i18n="legion_demo_note">Preview of the centurion's reactions. Nothing here is recorded or tracked.</span></div>
+      <div class="demo-actions">
+        <button class="chip-btn" id="demoApprove" type="button" data-i18n="demo_approve">Approval</button>
+        <button class="chip-btn" id="demoRemind" type="button" data-i18n="demo_remind">Reminder</button>
+        <button class="chip-btn" id="demoDemand" type="button" data-i18n="demo_demand">Missing record</button>
+      </div>
+    </div>
+
+    <div class="section-head"><h2 class="section-heading" data-i18n="meals_title">Meals</h2></div>
+    <div class="card list-card" id="entriesCard">
+      <div id="entriesList"></div>
+      <div id="dayMarkRow" class="day-mark-row" hidden></div>
+    </div>
+
+    <div class="card water-card">
+      <div class="water-row">
+        <span class="water-icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path></svg></span>
+        <div class="water-main">
+          <div class="water-title" data-i18n="water_title">Water</div>
+          <div class="water-val" id="waterVal">0 / 2 L</div>
         </div>
-        <div class="wellness-item">
-          <div class="wellness-label"><svg class="icon-inline" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span data-i18n="energy_title">Energy today</span></div>
-          <div class="energy-dots" id="energyDots">
-            <span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span>
-          </div>
-          <div class="wellness-value" id="energyVal">–</div>
+        <div class="water-bar" id="waterBar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="water-fill" id="waterFill"></div></div>
+        <button class="chip-btn chip-accent" id="addWater250" type="button">+250 ml</button>
+      </div>
+      <div class="water-more">
+        <button class="chip-btn chip-btn-remove" id="removeWater250" type="button">-250 ml</button>
+        <button class="chip-btn" id="addWater500" type="button">+500 ml</button>
+      </div>
+    </div>
+
+    <div class="card energy-card">
+      <div class="energy-row">
+        <span class="wellness-label"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> <span data-i18n="energy_title">Energy today</span></span>
+        <div class="energy-dots" id="energyDots">
+          <span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span><span class="energy-dot"></span>
         </div>
+        <span class="wellness-value" id="energyVal">–</span>
       </div>
     </div>
 
@@ -129,29 +157,8 @@
         <h2 class="section-title" data-i18n="tip_card_title">Today's Tip</h2>
       </div>
       <div id="tipContent">
-        <button class="btn btn-secondary" id="getTipBtn" style="width:100%" data-i18n="get_tip_btn">Get a Tip for Today</button>
+        <button class="btn btn-secondary" id="getTipBtn" type="button" style="width:100%" data-i18n="get_tip_btn">Get a Tip for Today</button>
       </div>
-    </div>
-
-    <div class="card">
-      <select class="meal-type-select" id="mealTypeSelect">
-        <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
-        <option value="lunch" data-i18n="meal_lunch">Lunch</option>
-        <option value="dinner" data-i18n="meal_dinner">Dinner</option>
-        <option value="snack" selected data-i18n="meal_snack">Snack</option>
-      </select>
-      <div class="add-meal-actions">
-        <button class="btn btn-primary" id="takePhotoBtn"><svg class="icon-inline" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> <span data-i18n="add_photo">Add Photo</span></button>
-        <button class="btn btn-secondary" id="manualEntryBtn"><svg class="icon-inline" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path></svg> <span data-i18n="manual">Manual</span></button>
-        <button class="btn btn-secondary" id="quickAddBtn"><svg class="icon-inline" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> <span data-i18n="quick_add_btn">Quick Add</span></button>
-      </div>
-      <input type="file" id="photoInput" accept="image/*" capture="environment">
-      <input type="file" id="photoInput2" accept="image/*" capture="environment">
-    </div>
-
-    <div class="card" id="entriesCard">
-      <div id="entriesList"></div>
-      <div id="dayMarkRow" class="day-mark-row" hidden></div>
     </div>
 
     <div class="card" id="gapRecommenderCard" hidden>
@@ -159,6 +166,12 @@
       <p class="explain-text" id="gapRecommenderExplain"></p>
       <div id="gapRecommenderList"></div>
     </div>
+
+    <button class="row-link" id="diaryLink" type="button">
+      <span class="row-link-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></span>
+      <span class="row-link-text"><span data-i18n="diary_title">Your diary</span> · <span id="diaryCount">0</span></span>
+      <span class="row-link-chev"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="9 18 15 12 9 6"></polyline></svg></span>
+    </button>
   </section>
 
   <!-- HISTORY -->
@@ -167,7 +180,7 @@
       <h2 class="section-title" data-i18n="weight_trend_title">Weight Trend</h2>
       <div class="field-row">
         <div class="field" style="flex:1;margin-bottom:0">
-          <input type="number" id="weightLogInput" step="0.1" data-i18n-ph="weight_kg" placeholder="kg">
+          <input type="number" id="weightLogInput" step="0.1" data-i18n-ph="weight_kg" placeholder="kg" data-i18n-aria="weight_kg" aria-label="Weight (kg)">
         </div>
         <button class="btn btn-primary" id="logWeightBtn" data-i18n="log_weight_btn">Log</button>
       </div>
@@ -214,7 +227,7 @@
         </div>
         <div class="field imperial-only" style="display:none">
           <label>&nbsp;</label>
-          <input type="number" id="heightIn" placeholder="in">
+          <input type="number" id="heightIn" placeholder="in" data-i18n-aria="height_in" aria-label="Height (in)">
         </div>
         <div class="field">
           <label id="weightLabel" data-i18n="weight_kg">Weight (kg)</label>
@@ -303,20 +316,61 @@
   </section>
 </main>
 
-<nav class="tabbar">
-  <button class="tab-btn active" data-tab="today">
-    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M9 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4"></path><line x1="8" y1="12" x2="16" y2="12"></line><line x1="8" y1="16" x2="13" y2="16"></line></svg>
+<div class="cta-dock" id="ctaDock">
+  <button class="btn btn-primary cta" id="addFoodBtn" type="button" aria-haspopup="dialog"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> <span data-i18n="add_food">Add food</span></button>
+</div>
+
+<nav class="tabbar" aria-label="Main">
+  <button class="tab-btn active" data-tab="today" type="button" aria-current="page">
+    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>
     <span data-i18n="tab_today">Today</span>
   </button>
-  <button class="tab-btn" data-tab="history">
-    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
-    <span data-i18n="tab_history">History</span>
+  <button class="tab-btn" data-tab="history" type="button">
+    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="6" y1="20" x2="6" y2="11"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="18" y1="20" x2="18" y2="14"></line></svg>
+    <span data-i18n="tab_history">Progress</span>
   </button>
-  <button class="tab-btn" data-tab="plan">
-    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+  <button class="tab-btn" data-tab="plan" type="button">
+    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="16" rx="3"></rect><line x1="8" y1="3" x2="8" y2="7"></line><line x1="16" y1="3" x2="16" y2="7"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
     <span data-i18n="tab_plan">Plan</span>
   </button>
 </nav>
+</div>
+
+<input type="file" id="photoInput" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+<input type="file" id="photoInput2" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+
+<!-- Add food: one panel for every way of adding a meal -->
+<div class="modal-backdrop hidden" id="addFoodModal">
+  <div class="modal-sheet">
+    <div class="sheet-handle"></div>
+    <h2 data-i18n="add_food">Add food</h2>
+    <div class="field">
+      <label for="mealTypeSelect" data-i18n="meal_type">Meal type</label>
+      <select class="meal-type-select" id="mealTypeSelect">
+        <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
+        <option value="lunch" data-i18n="meal_lunch">Lunch</option>
+        <option value="dinner" data-i18n="meal_dinner">Dinner</option>
+        <option value="snack" selected data-i18n="meal_snack">Snack</option>
+      </select>
+    </div>
+    <div class="add-options">
+      <button class="add-option primary" id="takePhotoBtn" type="button">
+        <span class="ao-icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+        <span class="ao-text"><strong data-i18n="add_photo">Add Photo</strong><small data-i18n="add_photo_hint">AI estimates calories and macros from the photo</small></span>
+      </button>
+      <button class="add-option" id="manualEntryBtn" type="button">
+        <span class="ao-icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path></svg></span>
+        <span class="ao-text"><strong data-i18n="manual">Manual</strong><small data-i18n="manual_hint">Type the calories and macros yourself</small></span>
+      </button>
+      <button class="add-option" id="quickAddBtn" type="button">
+        <span class="ao-icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></span>
+        <span class="ao-text"><strong data-i18n="quick_add_btn">Quick Add</strong><small data-i18n="favorites_hint">Log one of your saved favorites</small></span>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="addFoodCloseBtn" type="button" style="width:100%" data-i18n="close">Close</button>
+    </div>
+  </div>
 </div>
 
 <!-- Welcome modal -->
@@ -416,6 +470,11 @@
       <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="editFat"></div>
     </details>
 
+    <div class="edit-secondary">
+      <button class="btn btn-secondary" id="editFavoriteBtn" type="button"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> <span data-i18n="save_favorite">Save as favorite</span></button>
+      <button class="btn btn-danger-soft" id="editDeleteBtn" type="button"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> <span data-i18n="delete">Delete</span></button>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-secondary" id="editCancelBtn" data-i18n="cancel">Cancel</button>
       <button class="btn btn-primary" id="editSaveBtn" data-i18n="save">Save</button>
@@ -429,7 +488,34 @@
     <div class="sheet-handle"></div>
     <h2 data-i18n="settings_title">Settings</h2>
 
-    <div class="field"><label data-i18n="your_name">Your name</label><input type="text" id="settingsName"></div>
+    <h3 class="settings-subtitle" id="themeLabel" data-i18n="appearance_theme">Theme</h3>
+    <div class="seg" id="themeSeg" role="radiogroup" aria-labelledby="themeLabel">
+      <button type="button" role="radio" aria-checked="false" data-theme-choice="light" data-i18n="theme_light">Light</button>
+      <button type="button" role="radio" aria-checked="false" data-theme-choice="dark" data-i18n="theme_dark">Dark</button>
+      <button type="button" role="radio" aria-checked="false" data-theme-choice="system" data-i18n="theme_system">System</button>
+    </div>
+    <h3 class="settings-subtitle" id="modeLabel" data-i18n="appearance_mode">Style</h3>
+    <div class="seg" id="modeSeg" role="radiogroup" aria-labelledby="modeLabel">
+      <button type="button" role="radio" aria-checked="false" data-mode-choice="normal" data-i18n="mode_normal">Normal</button>
+      <button type="button" role="radio" aria-checked="false" data-mode-choice="roman" data-i18n="mode_roman">Roman Legion</button>
+    </div>
+    <div class="settings-toggle-row" id="demoToggleRow">
+      <label class="toggle-switch">
+        <input type="checkbox" id="demoToggle" checked aria-labelledby="demoToggleText">
+        <span class="toggle-slider"></span>
+      </label>
+      <span id="demoToggleText" data-i18n="legion_demo_toggle">Show the reaction preview (demo)</span>
+    </div>
+
+    <div class="settings-links">
+      <button class="row-link" id="langBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span class="row-link-text" data-i18n="language_label">Language</span><span class="row-link-value" id="langValue">EN</span></button>
+      <button class="row-link" id="whatsNewBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span class="row-link-text" data-i18n="whats_new_title">What's New</span></button>
+      <button class="row-link" id="installBtn" type="button" style="display:none"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span class="row-link-text" data-i18n="install_app">Install the app</span></button>
+    </div>
+
+    <hr class="settings-divider">
+
+    <div class="field"><label for="settingsName" data-i18n="your_name">Your name</label><input type="text" id="settingsName"></div>
     <button class="btn btn-secondary" id="settingsSaveNameBtn" style="width:100%" data-i18n="save">Save</button>
 
     <hr class="settings-divider">
@@ -443,10 +529,10 @@
 
     <div class="settings-toggle-row">
       <label class="toggle-switch">
-        <input type="checkbox" id="autoApplyToggle" checked>
+        <input type="checkbox" id="autoApplyToggle" checked aria-labelledby="autoApplyText">
         <span class="toggle-slider"></span>
       </label>
-      <span data-i18n="auto_apply_toggle_label">Auto-Apply Targets Automatically</span>
+      <span id="autoApplyText" data-i18n="auto_apply_toggle_label">Auto-Apply Targets Automatically</span>
     </div>
     <p class="explain-text" data-i18n="auto_apply_toggle_desc" style="margin-top:-6px">When on, the Analyst engine can change your calorie/macro targets by itself after a new weigh-in. When off, it still evaluates and logs to the Analyst Feed, but never changes your targets without you applying it manually.</p>
 
@@ -467,6 +553,7 @@
 <script src="/i18n.js"></script>
 <script src="/whatsnew.js"></script>
 <script src="/units.js"></script>
+<script src="/legion.js"></script>
 <script src="/api.js"></script>
 <script src="/app.js"></script>
 </body>

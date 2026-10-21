@@ -11,34 +11,49 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const FRONTEND = path.join(__dirname, "..", "..", "..", "frontend");
-const SCRIPTS = ["i18n.js", "whatsnew.js", "units.js", "api.js", "app.js"];
+const SCRIPTS = ["look.js", "i18n.js", "whatsnew.js", "units.js", "legion.js", "api.js", "app.js"];
 
 function makeElement(id) {
   const store = {
     id, value: "", innerHTML: "", textContent: "", className: "", disabled: false, hidden: false, checked: false,
     open: false, dataset: {}, style: {}, files: [], listeners: {},
   };
-  const classList = { add() {}, remove() {}, toggle() {}, contains() { return false; } };
-  return new Proxy(store, {
+  // a real class set, so a test can tell whether a sheet is open (no "hidden") or an element is marked
+  const classes = new Set();
+  const classList = {
+    add: (...c) => c.forEach((x) => classes.add(x)),
+    remove: (...c) => c.forEach((x) => classes.delete(x)),
+    toggle: (c, force) => { const on = force === undefined ? !classes.has(c) : !!force; on ? classes.add(c) : classes.delete(c); return on; },
+    contains: (c) => classes.has(c),
+  };
+  store.clicks = 0;
+  store.attrs = {};
+  const proxy = new Proxy(store, {
     get(target, prop) {
       if (prop in target) return target[prop];
       if (typeof prop === "symbol" || prop === "then") return undefined;
       if (prop === "classList") return classList;
+      if (prop === "click") return () => { target.clicks += 1; (target.listeners.click || []).forEach((fn) => fn({ target: proxy, stopPropagation() {} })); };
+      if (prop === "setAttribute") return (k, v) => { target.attrs[k] = String(v); };
+      if (prop === "getAttribute") return (k) => (k in target.attrs ? target.attrs[k] : null);
+      if (prop === "removeAttribute") return (k) => { delete target.attrs[k]; };
       if (prop === "addEventListener") return (type, fn) => { (target.listeners[type] ||= []).push(fn); };
       if (prop === "querySelectorAll") return () => [];
-      if (prop === "querySelector" || prop === "closest" || prop === "getAttribute") return () => null;
+      if (prop === "querySelector" || prop === "closest") return () => null;
       return () => undefined;                              // focus(), appendChild(), remove(), setAttribute() ...
     },
     set(target, prop, value) {
       target[prop] = prop === "value" ? (value === null || value === undefined ? "" : String(value)) : value;   // like a real <input>
+      if (prop === "textContent") target.innerHTML = String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");   // like the DOM
       return true;
     },
   });
+  return proxy;
 }
 
 // CS_APP_SOURCE=<file> runs the same tests against another copy of app.js (used to prove a test fails on the
 // code it was written to catch, e.g. the version from before a fix).
-function loadApp({ route, appSource = process.env.CS_APP_SOURCE ? fs.readFileSync(process.env.CS_APP_SOURCE, "utf8") : undefined } = {}) {
+function loadApp({ route, storage: seed = {}, confirm = () => true, appSource = process.env.CS_APP_SOURCE ? fs.readFileSync(process.env.CS_APP_SOURCE, "utf8") : undefined } = {}) {
   const elements = new Map();
   const el = (id) => {
     if (!elements.has(id)) elements.set(id, makeElement(id));
@@ -54,18 +69,19 @@ function loadApp({ route, appSource = process.env.CS_APP_SOURCE ? fs.readFileSyn
     documentElement: el("html"),
   }, { get: (t, p) => (p in t ? t[p] : typeof p === "symbol" ? undefined : () => undefined) });
 
-  const storage = new Map();
+  const storage = new Map(Object.entries(seed));
   const localStorage = {
     getItem: (k) => (storage.has(k) ? storage.get(k) : null),
     setItem: (k, v) => storage.set(k, String(v)),
     removeItem: (k) => storage.delete(k),
   };
-  const calls = { reloads: 0, fetches: [] };
+  const calls = { reloads: 0, fetches: [], confirms: 0 };
   const never = new Promise(() => {});                      // a request nobody answers (page boot, etc.)
 
   const sandbox = {
     document, localStorage, console, setTimeout, clearTimeout, Response, FormData, URL, Date, Math, JSON,
     navigator: { userAgent: "node-test" },
+    confirm: (msg) => { calls.confirms += 1; return confirm(msg); },
     location: { reload() { calls.reloads += 1; } },
     matchMedia: () => ({ matches: false }),
     fetch: (p, opts) => {

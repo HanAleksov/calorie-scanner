@@ -2,7 +2,7 @@ const TRANSLATIONS = {
   en: {
     app_name: "Calorie Scanner",
     tab_today: "Today",
-    tab_history: "History",
+    tab_history: "Progress",
     tab_plan: "Plan",
     ios_hint: 'Install this app: tap Share, then "Add to Home Screen".',
 
@@ -268,17 +268,58 @@ const TRANSLATIONS = {
     edit_photo_meal: "Photo meal",
     edit_manual_meal: "Manual entry",
     daily_water_ml: "Daily Water (ml)",
+
+    // Stage 2 look
+    meals_title: "Meals",
+    add_food: "Add food",
+    add_photo_hint: "AI estimates calories and macros from the photo",
+    manual_hint: "Type the calories and macros yourself",
+    favorites_hint: "Log one of your saved favorites",
+    diary_title: "Your diary",
+    entries_one: "1 entry",
+    entries_many: "{n} entries",
+    kcal_unit: "kcal",
+    gram_unit: "g",
+    litre_unit: "L",
+    protein_short: "P",
+    carbs_short: "C",
+    fat_short: "F",
+    kcal_progress: "Calories progress",
+    kcal_progress_text: "{eaten} of {goal} kcal",
+    switch_profile: "Switch profile",
+    switch_user_confirm: "Sign out and pick another profile?",
+    appearance_theme: "Theme",
+    theme_light: "Light",
+    theme_dark: "Dark",
+    theme_system: "System",
+    appearance_mode: "Style",
+    mode_normal: "Normal",
+    mode_roman: "Roman Legion",
+    language_label: "Language",
+    install_app: "Install the app",
+    height_in: "Height (in)",
+    pin_label: "PIN",
+    legion_demo_toggle: "Show the reaction preview (demo)",
+    legion_demo_tag: "DEMO",
+    legion_demo_note: "Preview of the centurion's reactions. Nothing here is recorded or tracked.",
+    legion_demo_word: "demo",
+    legion_rank: "Legionary",
+    legion_next_meal: "Next meal",
+    legion_last_record: "Last record",
+    demo_approve: "Approval",
+    demo_remind: "Reminder",
+    demo_demand: "Missing record",
   },
 
   bg: {
     app_name: "Скенер на калории",
     tab_today: "Днес",
-    tab_history: "История",
+    tab_history: "Прогрес",
     tab_plan: "План",
     ios_hint: 'Инсталирай приложението: докосни Share, после "Add to Home Screen".',
 
-    kcal_left: "кал. остават",
-    eaten: "изядени",
+    kcal_left: "ккал остават",
+    eaten: "приети",
     goal: "цел",
     protein: "Протеин",
     carbs: "Въглехидрати",
@@ -541,6 +582,47 @@ const TRANSLATIONS = {
     edit_photo_meal: "Хранене от снимка",
     edit_manual_meal: "Ръчен запис",
     daily_water_ml: "Дневна вода (мл)",
+
+    // Stage 2 look
+    meals_title: "Хранения",
+    add_food: "Добави храна",
+    add_photo_hint: "ИИ оценява калориите и макросите от снимката",
+    manual_hint: "Въведи калориите и макросите сам",
+    favorites_hint: "Запиши някое от любимите си",
+    diary_title: "Дневникът ти",
+    entries_one: "1 запис",
+    entries_many: "{n} записа",
+    kcal_unit: "ккал",
+    gram_unit: "г",
+    litre_unit: "л",
+    protein_short: "П",
+    carbs_short: "В",
+    fat_short: "М",
+    kcal_progress: "Прогрес на калориите",
+    kcal_progress_text: "{eaten} от {goal} ккал",
+    switch_profile: "Смени профил",
+    switch_user_confirm: "Да излезеш и да избереш друг профил?",
+    appearance_theme: "Тема",
+    theme_light: "Светла",
+    theme_dark: "Тъмна",
+    theme_system: "Системна",
+    appearance_mode: "Стил",
+    mode_normal: "Нормален",
+    mode_roman: "Римски легион",
+    language_label: "Език",
+    install_app: "Инсталирай приложението",
+    height_in: "Ръст (инча)",
+    pin_label: "ПИН",
+    legion_demo_toggle: "Показвай прегледа на реакциите (демо)",
+    legion_demo_tag: "ДЕМО",
+    legion_demo_note: "Преглед на реакциите на центуриона. Нищо тук не се записва и не се следи.",
+    legion_demo_word: "демо",
+    legion_rank: "Легионер",
+    legion_next_meal: "Следващо хранене",
+    legion_last_record: "Последен запис",
+    demo_approve: "Одобрение",
+    demo_remind: "Напомняне",
+    demo_demand: "Липсващ запис",
   },
 };
 
@@ -565,6 +647,12 @@ function applyStaticTranslations() {
   });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
     el.placeholder = t(el.dataset.i18nPh);
+  });
+  document.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+    el.setAttribute("aria-label", t(el.dataset.i18nAria));
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    el.setAttribute("title", t(el.dataset.i18nTitle));
   });
   document.documentElement.lang = currentLang();
 }

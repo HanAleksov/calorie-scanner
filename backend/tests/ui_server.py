@@ -79,6 +79,60 @@ async def test_hooks(request, call_next):
     return await call_next(request)
 
 
+def _draw_food(path, kind):
+    """Invented plates for the redesign screenshots (flat shapes, not photos of anything real)."""
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (260, 260), (236, 226, 210))
+    d = ImageDraw.Draw(img)
+    d.ellipse((18, 18, 242, 242), fill=(250, 248, 244), outline=(214, 204, 190), width=4)
+    if kind == "porridge":
+        d.ellipse((46, 46, 214, 214), fill=(226, 196, 150))
+        for x, y, c in [(100, 96, (176, 24, 48)), (140, 110, (40, 60, 150)), (120, 140, (200, 30, 52)), (86, 130, (50, 70, 160)), (156, 150, (186, 28, 50)), (110, 80, (40, 56, 140))]:
+            d.ellipse((x - 14, y - 14, x + 14, y + 14), fill=c)
+    elif kind == "chicken":
+        d.ellipse((120, 56, 226, 150), fill=(196, 128, 60))
+        d.ellipse((44, 110, 150, 206), fill=(246, 242, 232))
+        for i in range(14):
+            d.ellipse((58 + (i * 23) % 80, 124 + (i * 31) % 70, 70 + (i * 23) % 80, 134 + (i * 31) % 70), fill=(228, 222, 206))
+        d.polygon([(150, 150), (206, 186), (170, 214)], fill=(66, 140, 66))
+        d.ellipse((130, 62, 200, 112), fill=(176, 104, 44))
+    else:  # yogurt
+        d.ellipse((50, 50, 210, 210), fill=(252, 250, 246), outline=(226, 220, 210), width=3)
+        d.ellipse((70, 70, 190, 190), fill=(244, 238, 226))
+        for x, y in [(112, 104), (150, 96), (130, 134), (100, 140), (158, 138)]:
+            d.ellipse((x - 12, y - 12, x + 12, y + 12), fill=(196, 30, 54))
+        d.ellipse((120, 150, 150, 176), fill=(214, 170, 90))
+    img.save(path, quality=90)
+
+
+def seed_demo_profile(today):
+    """One invented profile whose Today screen matches the approved concept's numbers (1440 of 2400 kcal)."""
+    main.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    with db.get_conn() as conn:
+        uid = db.create_user(conn, "Demo", None)["id"]
+        db.set_profile(conn, uid, {"goal_type": "gain", "height_cm": 180, "weight_kg": 70, "age": 25, "sex": "male",
+                                   "activity_level": "moderate"})
+        db.set_goals(conn, uid, calories=2400, protein_g=150, carbs_g=270, fat_g=80, water_ml=2500)
+        db.add_weight_entry(conn, uid, 70.0, f"{(today - timedelta(days=1)).isoformat()}T08:00:00")
+        for d in range(1, 8):
+            day = today - timedelta(days=d)
+            for meal, hour, kcal in (("breakfast", "08", 700), ("lunch", "13", 900), ("dinner", "19", 800)):
+                db.insert_entry(conn, user_id=uid, created_at=f"{day.isoformat()}T{hour}:00:00", meal_type=meal, source="manual",
+                                items_json=json.dumps([{"name": "Seed " + meal, "est_grams": None}]), total_calories=kcal,
+                                protein_g=45, carbs_g=80, fat_g=25, confidence="manual")
+        for name, kind, hour, meal, item, kcal, p, c, f in (
+            ("demo-porridge.jpg", "porridge", "08:10", "snack", "Oats with berries", 420, 28, 52, 12),
+            ("demo-chicken.jpg", "chicken", "13:05", "lunch", "Chicken with rice", 720, 42, 78, 22),
+            ("demo-yogurt.jpg", "yogurt", "15:40", "snack", "Yogurt with berries", 300, 20, 32, 14),
+        ):
+            _draw_food(main.UPLOADS_DIR / name, kind)
+            db.insert_entry(conn, user_id=uid, created_at=f"{today.isoformat()}T{hour}:00", meal_type=meal, source="photo",
+                            items_json=json.dumps([{"name": item, "est_grams": 250, "calories": kcal, "protein_g": p, "carbs_g": c, "fat_g": f}]),
+                            total_calories=kcal, protein_g=p, carbs_g=c, fat_g=f, confidence="high", image_path=name)
+    with db.get_conn() as conn:
+        db.add_water(conn, uid, 1000, f"{today.isoformat()}T09:00:00")
+
+
 def seed():
     today = tzutil.today_local()
     db.init_db()
@@ -103,6 +157,7 @@ def seed():
         boris = person("Boris", "1234", "lose", [80.0] * 20, 2200, 2200, height_cm=178)
         ceci = person("Ceci", None, "maintain", [60.0] * 20, 2000, 2000)
         dani = person("Dani", None, "gain", [65.0] * 20, 2500, 2500, auto=0)         # same, but auto-apply is off -> unchanged
+    seed_demo_profile(today)
     # a real photo entry for Anna
     main.UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     from PIL import Image
