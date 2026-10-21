@@ -5,13 +5,12 @@
 // the final ones). To use final artwork replace those files, or change the four paths in ASSETS; nothing else
 // depends on how they look. Moods are shown by cross-fading between the four <img> elements.
 //
-// Real-data hooks that exist but are intentionally NOT wired yet (the real meal schedule, the time a meal was
-// eaten and background notifications are a separate piece of work; a photo's upload time is not proof of when
-// something was eaten):
-//   - reaction("remind", lang, n, { time })       <- will be driven by a user-chosen reminder time
-//   - reaction("demand", lang, n)                 <- will be driven by "an expected record is missing"
-//   - chipsHtml({ nextMeal, lastLog }, ...)       <- renders the "next meal / last record" chips from real values
-// Until then those two reactions are reachable only through the clearly-labelled reaction preview in Settings.
+// The lines are driven by real data from app.js (schedule.js decides WHEN): a reminder before a planned meal
+// ("remind", with the planned time), a question when a planned meal has no record ("demand"), approval right after a
+// meal was logged ("approve"), and a calm line otherwise ("idle*", which can mention the next planned meal). All of it
+// only happens while the app is open and only when the user switched reminders on; there are no background
+// notifications. The clearly-labelled reaction preview in Settings (DEMO) still plays every reaction with made-up
+// times and writes nothing.
 (function (root) {
   "use strict";
 
@@ -26,6 +25,10 @@
     idle_empty: {
       bg: ["Още няма доклад за днес. Строят чака, легионер."],
       en: ["No report yet today. The ranks are waiting, legionary."],
+    },
+    idle_next: {
+      bg: ["Следващ доклад: {meal} в {time}. Бъди на линия.", "На строй в {time} — {meal}."],
+      en: ["Next report: {meal} at {time}. Be at your post.", "Fall in at {time} for {meal}."],
     },
     idle_done: {
       bg: ["Нормата е изпълнена. Почивай по устав."],
@@ -73,7 +76,7 @@
     },
   };
 
-  const MOOD_OF = { idle: "idle", idle_empty: "idle", idle_done: "idle", idle_over: "idle", approve: "approve", remind: "remind", demand: "demand" };
+  const MOOD_OF = { idle: "idle", idle_empty: "idle", idle_next: "idle", idle_done: "idle", idle_over: "idle", approve: "approve", remind: "remind", demand: "demand" };
 
   function reaction(kind, lang, n, vars) {
     const set = LINES[kind];
@@ -84,15 +87,17 @@
     return { kind, mood: MOOD_OF[kind], text };
   }
 
-  // The line shown when nothing special happened, from real totals only (no schedule involved).
-  // Goal-aware: eating up to or past the target is the point of a "gain" goal, but for "lose"/"maintain" going over
-  // is not something to congratulate.
-  function idleKind({ entries, calories, goal, goalType }) {
+  // The line shown when nothing special happened. Mostly from real totals; with a planned meal still ahead
+  // (`next`: the user's own schedule) the plain "keep going" line becomes "next report: lunch at 13:00".
+  // Goal-aware: eating up to or past the target is the point of a "gain" goal, but for "lose"/"maintain"
+  // going over is not something to congratulate.
+  function idleKind({ entries, calories, goal, goalType, next }) {
+    const plain = next ? "idle_next" : "idle";
     if (!entries) return "idle_empty";
-    if (!goal) return "idle";
-    if (goalType === "gain") return calories >= goal ? "idle_done" : "idle";
+    if (!goal) return plain;
+    if (goalType === "gain") return calories >= goal ? "idle_done" : plain;
     if (calories > goal) return "idle_over";
-    return calories === goal ? "idle_done" : "idle";
+    return calories === goal ? "idle_done" : plain;
   }
 
   // "next meal / last record" chips. Both come from real values once they exist; with none, no chips at all.

@@ -148,6 +148,15 @@ def _entry_to_public(entry: dict) -> dict:
     return entry
 
 
+def _new_entry_eaten_time(raw) -> str | None:
+    """The time the user says they ate, for an entry being logged right now (None = they didn't say)."""
+    value = validation.clock_time(raw, "eaten_time", allow_none=True)
+    now = tzutil.now_local_naive()
+    day = now.date().isoformat()
+    validation.eaten_time_not_in_future(value, day, day, now.strftime("%H:%M"))
+    return value
+
+
 def _totals(entries: list[dict]) -> dict:
     scored = [e["energy_score"] for e in entries if e.get("energy_score") is not None]
     return {
@@ -379,10 +388,12 @@ async def log_meal(
     meal_type: str = Form("snack"),
     lang: str = Form("en"),
     description: str = Form(""),
+    eaten_time: str = Form(""),
     user_id: int = Depends(current_user_id),
 ):
     if meal_type not in ALLOWED_MEAL_TYPES:
         raise HTTPException(400, f"meal_type must be one of {sorted(ALLOWED_MEAL_TYPES)}")
+    eaten_time = _new_entry_eaten_time(eaten_time)     # checked before the (paid) analysis, not after
     if lang not in ALLOWED_LANGS:
         lang = "en"
     description = description.strip()[:300]
@@ -435,6 +446,7 @@ async def log_meal(
             image_path2=filename2,
             energy_score=result.get("energy_score"),
             notes=description or None,
+            eaten_time=eaten_time,
         )
     return _entry_to_public(entry)
 
@@ -447,10 +459,12 @@ async def log_manual(
     protein_g: str = Form("0"),
     carbs_g: str = Form("0"),
     fat_g: str = Form("0"),
+    eaten_time: str = Form(""),
     user_id: int = Depends(current_user_id),
 ):
     if meal_type not in ALLOWED_MEAL_TYPES:
         raise HTTPException(400, f"meal_type must be one of {sorted(ALLOWED_MEAL_TYPES)}")
+    eaten_time = _new_entry_eaten_time(eaten_time)
     description = validation.text(description.strip(), "description", required=True)
     values = validation.entry_values(
         {"total_calories": total_calories, "protein_g": protein_g, "carbs_g": carbs_g, "fat_g": fat_g},
@@ -471,6 +485,7 @@ async def log_manual(
             carbs_g=carbs_g,
             fat_g=fat_g,
             confidence="manual",
+            eaten_time=eaten_time,
         )
     return _entry_to_public(entry)
 
@@ -483,10 +498,13 @@ def today(user_id: int = Depends(current_user_id)):
         goals = db.get_goals(conn, user_id)
         water_ml = db.get_water_total_for_date(conn, user_id, today_str)
         mark = db.get_day_marks(conn, user_id, today_str, today_str).get(today_str)
+        schedule = db.get_schedule(conn, user_id)
     day_status = _day_status(entries, mark)
     entries = [_entry_to_public(e) for e in entries]
     return {
         "date": today_str,
+        "now": tzutil.now_local_naive().isoformat(timespec="seconds"),   # the app's own clock (Sofia), for the schedule
+        "schedule": schedule,
         "day_status": day_status,
         "day_mark": mark,
         "entries": entries,
@@ -837,6 +855,21 @@ def _day_status(day_entries: list[dict], mark: str | None) -> str:
     return "complete" if _day_is_complete(day_entries, mark) else "partial"
 
 
+@app.get("/api/schedule")
+def get_schedule(user_id: int = Depends(current_user_id)):
+    with db.get_conn() as conn:
+        return db.get_schedule(conn, user_id)
+
+
+@app.put("/api/schedule")
+def put_schedule(payload: dict, user_id: int = Depends(current_user_id)):
+    """The user's own eating schedule and the switch for in-app reminders. Either key may be sent; what is sent
+    replaces what was stored. Checked completely first, then written in one transaction."""
+    slots, reminders = validation.schedule(payload, ALLOWED_MEAL_TYPES, db.MAX_SCHEDULE_SLOTS)
+    with db.get_conn() as conn:
+        return db.set_schedule(conn, user_id, slots, reminders)
+
+
 @app.put("/api/days/{day}/mark")
 def set_day_mark(day: str, payload: dict, user_id: int = Depends(current_user_id)):
     """Explicitly tell the analyst how to treat a day: "complete" (this was everything I
@@ -871,19 +904,25 @@ def update_entry(entry_id: int, payload: dict, user_id: int = Depends(current_us
     into new item macros/totals first, then any explicit calories/macros/meal_type/notes in the same
     payload are applied on top (manual numbers deliberately win over the grams recalculation). Either
     everything is saved or nothing is."""
-    allowed = {"meal_type", "total_calories", "protein_g", "carbs_g", "fat_g", "notes"}
+    allowed = {"meal_type", "total_calories", "protein_g", "carbs_g", "fat_g", "notes", "eaten_time"}
     fields = {k: v for k, v in payload.items() if k in allowed}
     if "meal_type" in fields and fields["meal_type"] not in ALLOWED_MEAL_TYPES:
         raise HTTPException(400, f"meal_type must be one of {sorted(ALLOWED_MEAL_TYPES)}")
     fields.update(validation.entry_values(fields))
     if "notes" in fields:
         fields["notes"] = validation.text(fields["notes"], "notes")
+    if "eaten_time" in fields:          # null / "" clears it; a missing key leaves whatever is stored untouched
+        fields["eaten_time"] = validation.clock_time(fields["eaten_time"], "eaten_time", allow_none=True)
     grams = validation.portions(payload["items"]) if "items" in payload else None
 
     with db.get_conn() as conn:
         entry = db.get_entry(conn, user_id, entry_id)
         if not entry:
             raise HTTPException(404, "entry not found")
+        if fields.get("eaten_time"):
+            now = tzutil.now_local_naive()
+            validation.eaten_time_not_in_future(fields["eaten_time"], entry["created_at"][:10],
+                                                now.date().isoformat(), now.strftime("%H:%M"))
         update = _portion_update(entry, grams) if grams is not None else {}
         update.update(fields)
         entry = db.update_entry(conn, user_id, entry_id, update)
@@ -934,6 +973,7 @@ def remove_favorite(favorite_id: int, user_id: int = Depends(current_user_id)):
 @app.post("/api/favorites/{favorite_id}/log")
 def log_favorite(favorite_id: int, payload: dict, user_id: int = Depends(current_user_id)):
     meal_type = payload.get("meal_type")
+    eaten_time = _new_entry_eaten_time(payload.get("eaten_time"))
     with db.get_conn() as conn:
         favorite = db.get_favorite(conn, user_id, favorite_id)
         if not favorite:
@@ -953,6 +993,7 @@ def log_favorite(favorite_id: int, payload: dict, user_id: int = Depends(current
             fat_g=favorite["fat_g"],
             confidence="manual",
             energy_score=favorite["energy_score"],
+            eaten_time=eaten_time,
         )
     return _entry_to_public(entry)
 

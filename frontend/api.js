@@ -110,6 +110,10 @@
       if (e.code === "required") return tr("err_required", { field });
       if (e.code === "too_long") return tr("err_too_long", { field, max: e.max });
       if (e.code === "inconsistent") return tr("err_inconsistent", { field });
+      if (e.code === "in_future") return tr("err_time_future");
+      if (e.code === "invalid_time") return tr("err_invalid_time", { field });
+      if (e.code === "duplicate") return tr("err_duplicate_time");
+      if (e.code === "too_many") return tr("err_too_many");
       return tr("err_invalid_number", { field });
     }
     return typeof e.message === "string" && e.message ? e.message : tr("something_wrong");

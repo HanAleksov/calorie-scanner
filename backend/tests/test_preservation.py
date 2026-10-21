@@ -65,8 +65,8 @@ class PreservationTests(AppTestCase):
         db.DB_PATH = self.pre
         db.init_db()                                                     # the startup migration, on the old file
         self.after_migration = db_snapshot.snapshot(self.pre)
-        self.allow = {"allow_new_tables": {"sessions"},
-                      "allow_new_columns": ["users.pin_failed_count", "users.pin_locked_until"]}
+        self.allow = {"allow_new_tables": {"sessions", "meal_schedule", "reminder_settings"},
+                      "allow_new_columns": ["users.pin_failed_count", "users.pin_locked_until", "entries.eaten_time"]}
 
     def test_the_before_snapshot_really_is_the_old_shape(self):
         self.assertNotIn("sessions", self.before["tables"])
@@ -81,10 +81,11 @@ class PreservationTests(AppTestCase):
 
     def test_the_only_schema_changes_are_the_allowed_ones(self):
         added_tables = set(self.after_migration["tables"]) - set(self.before["tables"])
-        self.assertEqual(added_tables, {"sessions"})
+        self.assertEqual(added_tables, {"sessions", "meal_schedule", "reminder_settings"})
+        expected = {"users": ["pin_failed_count", "pin_locked_until"], "entries": ["eaten_time"]}
         for table, entry in self.before["tables"].items():
             new_cols = [c for c in self.after_migration["tables"][table]["columns"] if c not in entry["columns"]]
-            self.assertEqual(new_cols, ["pin_failed_count", "pin_locked_until"] if table == "users" else [], table)
+            self.assertEqual(new_cols, expected.get(table, []), table)
 
     def test_current_targets_and_flags_survive(self):
         g = self.rows("SELECT * FROM goals WHERE user_id=1")[0]

@@ -55,6 +55,8 @@ def _migrate(conn) -> None:
             conn.execute("ALTER TABLE entries ADD COLUMN image_path2 TEXT")
         if "energy_score" not in entry_cols:
             conn.execute("ALTER TABLE entries ADD COLUMN energy_score REAL")
+        if "eaten_time" not in entry_cols:
+            conn.execute("ALTER TABLE entries ADD COLUMN eaten_time TEXT")   # NULL for every existing entry: never confirmed
 
     if _table_exists(conn, "goals"):
         goals_cols = _table_columns(conn, "goals")
@@ -183,6 +185,8 @@ def delete_user(conn, user_id: int) -> None:
     conn.execute("DELETE FROM favorites WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM analyst_logs WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM day_marks WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM meal_schedule WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM reminder_settings WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
     conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
 
@@ -266,14 +270,14 @@ def delete_entries_for_date(conn, user_id: int, date_str: str) -> list:
 
 def insert_entry(conn, *, user_id, created_at, meal_type, source, items_json,
                   total_calories, protein_g, carbs_g, fat_g, confidence,
-                  notes=None, image_path=None, image_path2=None, energy_score=None):
+                  notes=None, image_path=None, image_path2=None, energy_score=None, eaten_time=None):
     cur = conn.execute(
         """INSERT INTO entries
            (user_id, created_at, meal_type, source, items_json, total_calories,
-            protein_g, carbs_g, fat_g, confidence, notes, image_path, image_path2, energy_score)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            protein_g, carbs_g, fat_g, confidence, notes, image_path, image_path2, energy_score, eaten_time)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (user_id, created_at, meal_type, source, items_json, total_calories,
-         protein_g, carbs_g, fat_g, confidence, notes, image_path, image_path2, energy_score),
+         protein_g, carbs_g, fat_g, confidence, notes, image_path, image_path2, energy_score, eaten_time),
     )
     return get_entry(conn, user_id, cur.lastrowid)
 
@@ -554,3 +558,31 @@ def set_day_mark(conn, user_id: int, day: str, status: str | None) -> None:
            ON CONFLICT(user_id, day) DO UPDATE SET status = excluded.status""",
         (user_id, day, status),
     )
+
+
+# ---------- eating schedule & in-app reminders ----------
+
+MAX_SCHEDULE_SLOTS = 6
+
+
+def get_schedule(conn, user_id: int) -> dict:
+    slots = [{"meal_type": r["meal_type"], "time": r["at_time"]} for r in conn.execute(
+        "SELECT meal_type, at_time FROM meal_schedule WHERE user_id = ? ORDER BY slot", (user_id,))]
+    row = conn.execute("SELECT enabled, lead_min FROM reminder_settings WHERE user_id = ?", (user_id,)).fetchone()
+    return {"slots": slots, "reminders": {"enabled": bool(row["enabled"]) if row else False,
+                                           "lead_min": row["lead_min"] if row else 15}}
+
+
+def set_schedule(conn, user_id: int, slots: list | None, reminders: dict | None) -> dict:
+    """Replaces the whole schedule and/or the reminder settings (whichever is given) in the caller's transaction."""
+    if slots is not None:
+        conn.execute("DELETE FROM meal_schedule WHERE user_id = ?", (user_id,))
+        for i, s in enumerate(slots, start=1):
+            conn.execute("INSERT INTO meal_schedule (user_id, slot, meal_type, at_time) VALUES (?, ?, ?, ?)",
+                         (user_id, i, s["meal_type"], s["time"]))
+    if reminders is not None:
+        conn.execute(
+            """INSERT INTO reminder_settings (user_id, enabled, lead_min) VALUES (?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, lead_min = excluded.lead_min""",
+            (user_id, 1 if reminders["enabled"] else 0, reminders["lead_min"]))
+    return get_schedule(conn, user_id)

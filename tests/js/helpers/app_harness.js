@@ -1,4 +1,4 @@
-// Loads the REAL frontend scripts (i18n, whatsnew, units, api, app — in index.html's order) into a vm
+// Loads the REAL frontend scripts (i18n, whatsnew, units, schedule, legion, dialogs, api, app — in index.html's order) into a vm
 // context with a permissive fake DOM, so a test can drive the actual handlers in app.js: the same code the
 // browser runs, with only the DOM and the network replaced. No dependencies (Node 18+).
 //
@@ -11,7 +11,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const FRONTEND = path.join(__dirname, "..", "..", "..", "frontend");
-const SCRIPTS = ["look.js", "i18n.js", "whatsnew.js", "units.js", "legion.js", "dialogs.js", "api.js", "app.js"];
+const SCRIPTS = ["look.js", "i18n.js", "whatsnew.js", "units.js", "schedule.js", "legion.js", "dialogs.js", "api.js", "app.js"];
 
 function makeElement(id) {
   const store = {
@@ -53,7 +53,7 @@ function makeElement(id) {
 
 // CS_APP_SOURCE=<file> runs the same tests against another copy of app.js (used to prove a test fails on the
 // code it was written to catch, e.g. the version from before a fix).
-function loadApp({ route, storage: seed = {}, confirm = () => true, animation = false, appSource = process.env.CS_APP_SOURCE ? fs.readFileSync(process.env.CS_APP_SOURCE, "utf8") : undefined } = {}) {
+function loadApp({ route, storage: seed = {}, confirm = () => true, animation = false, now: startNow = null, appSource = process.env.CS_APP_SOURCE ? fs.readFileSync(process.env.CS_APP_SOURCE, "utf8") : undefined } = {}) {
   const elements = new Map();
   const el = (id) => {
     if (!elements.has(id)) elements.set(id, makeElement(id));
@@ -81,9 +81,20 @@ function loadApp({ route, storage: seed = {}, confirm = () => true, animation = 
   const queue = [];
   const frames = { step(ms) { clock += ms; queue.splice(0).forEach((fn) => fn(clock)); }, get pending() { return queue.length; } };
   const never = new Promise(() => {});                      // a request nobody answers (page boot, etc.)
+  // optional fixed clock (ms since the epoch): h.setNow(ms) moves it, so "what time is it" is part of the test
+  let fakeNow = startNow;
+  class FakeDate extends Date {
+    constructor(...a) { if (a.length === 0 && fakeNow !== null) super(fakeNow); else super(...a); }
+    static now() { return fakeNow !== null ? fakeNow : Date.now(); }
+  }
+  // the page's own timers (the reminder tick): h.timers.tick() runs every interval callback once
+  const intervals = [];
+  const timers = { tick() { intervals.slice().forEach((fn) => fn()); }, get count() { return intervals.length; } };
 
   const sandbox = {
-    document, localStorage, console, setTimeout, clearTimeout, Response, FormData, URL, Date, Math, JSON,
+    document, localStorage, console, setTimeout, clearTimeout, Response, FormData, URL, Date: FakeDate, Math, JSON,
+    setInterval: (fn) => { intervals.push(fn); return intervals.length; },
+    clearInterval: () => {},
     navigator: { userAgent: "node-test" },
     confirm: (msg) => { calls.confirms += 1; return confirm(msg); },
     location: { reload() { calls.reloads += 1; } },
@@ -106,7 +117,8 @@ function loadApp({ route, storage: seed = {}, confirm = () => true, animation = 
   }
   const run = (code) => vm.runInContext(code, ctx);
   return {
-    ctx, calls, run, el, frames,
+    ctx, calls, run, el, frames, timers,
+    setNow(ms) { fakeNow = ms; },
     state: run("state"),
     fire(id, type, event = {}) { (el(id).listeners[type] || []).forEach((fn) => fn(event)); },
     // stop the page's own follow-up reloads (Today, goals form) from touching the fake network

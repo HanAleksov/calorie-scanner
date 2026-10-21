@@ -10,6 +10,7 @@ are still read back unchanged. Nutrition formulas live in nutrition.py and are n
 """
 
 import math
+import re
 
 from fastapi import HTTPException
 
@@ -151,3 +152,60 @@ def portions(items) -> list:
         g = item.get("est_grams") if isinstance(item, dict) else None
         grams.append(number(g, f"items[{i}].est_grams", *LIMITS["est_grams"], allow_none=True))
     return grams
+
+
+# ---------- eating time & schedule ----------
+
+CLOCK_RE = re.compile(r"^(?:[01]?\d|2[0-3]):[0-5]\d$")
+REMINDER_LEAD_MIN = (0, 120)
+
+
+def clock_time(value, field: str, *, allow_none: bool = False):
+    """A wall-clock time "H:MM" / "HH:MM" -> zero-padded "HH:MM". None / "" is 'not given' when allow_none."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        if allow_none:
+            return None
+        fail("required", field, f"{field} is required")
+    if not isinstance(value, str) or not CLOCK_RE.match(value.strip()):
+        fail("invalid_time", field, f"{field} must be a time like 13:05")
+    hours, minutes = value.strip().split(":")
+    return f"{int(hours):02d}:{minutes}"
+
+
+def eaten_time_not_in_future(eaten_time: str | None, entry_day: str, today: str, now_hhmm: str) -> None:
+    """Today's entries can't have been eaten later than the current local time (the HH:MM strings compare correctly)."""
+    if eaten_time is not None and entry_day == today and eaten_time > now_hhmm:
+        fail("in_future", "eaten_time", "the time you ate can't be later than now", max=now_hhmm)
+
+
+def schedule(payload: dict, allowed_meal_types, max_slots: int) -> tuple:
+    """-> (slots sorted by time or None when absent, reminders dict or None when absent). Everything is checked
+    before anything is stored, so a rejected request changes nothing."""
+    slots = None
+    if "slots" in payload:
+        raw = payload["slots"]
+        if not isinstance(raw, list):
+            fail("invalid_number", "slots", "slots must be a list")
+        if len(raw) > max_slots:
+            fail("too_many", "slots", f"at most {max_slots} meals in the schedule", max=max_slots)
+        slots, seen = [], set()
+        for i, item in enumerate(raw):
+            if not isinstance(item, dict):
+                fail("invalid_number", f"slots[{i}]", "each slot must be an object")
+            meal_type = item.get("meal_type")
+            if meal_type not in allowed_meal_types:
+                fail("invalid_number", f"slots[{i}].meal_type", f"meal_type must be one of {sorted(allowed_meal_types)}")
+            at = clock_time(item.get("time"), f"slots[{i}].time")
+            if at in seen:
+                fail("duplicate", f"slots[{i}].time", "two meals can't have the same time")
+            seen.add(at)
+            slots.append({"meal_type": meal_type, "time": at})
+        slots.sort(key=lambda s: s["time"])
+    reminders = None
+    if "reminders" in payload:
+        raw = payload["reminders"]
+        if not isinstance(raw, dict) or not isinstance(raw.get("enabled"), bool):
+            fail("invalid_number", "reminders.enabled", "enabled must be true or false")
+        lead = number(raw.get("lead_min", 15), "reminders.lead_min", *REMINDER_LEAD_MIN, integer=True)
+        reminders = {"enabled": raw["enabled"], "lead_min": lead}
+    return slots, reminders

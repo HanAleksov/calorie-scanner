@@ -23,30 +23,36 @@
 </head>
 <body>
 
-<!-- USER PICKER (shown before anything else if no profile is stored) -->
+<!-- SIGN-IN (shown before anything else when there is no session) -->
 <div class="user-gate" id="userGate">
-  <div class="user-gate-card">
-    <button class="icon-btn" id="langBtnGate" style="float:right">BG</button>
-    <div class="logo-mark" style="font-size:34px">🍽</div>
-    <h1 data-i18n="who_is_this">Who's logging?</h1>
+  <div class="gate-shell">
+    <div class="gate-top">
+      <button class="chip-btn gate-lang" id="langBtnGate" type="button" data-i18n-aria="language_label">BG</button>
+    </div>
+    <div class="gate-brand">
+      <div class="gate-mark" id="gateMark"><span class="logo-mark" aria-hidden="true">🍽</span></div>
+      <div class="gate-portrait lg-portrait-wrap" id="gatePortrait" aria-hidden="true"></div>
+      <h1 data-i18n="who_is_this">Who's logging?</h1>
+      <p class="gate-sub" id="gateSub" data-i18n="gate_sub">Pick your profile to continue.</p>
+    </div>
     <p id="gateNotice" class="gate-notice hidden" role="status"></p>
 
     <div id="userList" class="user-list"></div>
 
-    <button class="btn btn-secondary" id="newPersonBtn" style="width:100%" data-i18n="new_person">New person</button>
+    <button class="gate-add" id="newPersonBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg><span data-i18n="new_person">New person</span></button>
 
-    <div id="newPersonForm" class="hidden" style="margin-top:14px">
-      <div class="field"><label data-i18n="your_name">Your name</label><input type="text" id="newUserName" data-i18n-ph="your_name_ph" placeholder="e.g. Aleks"></div>
-      <div class="field"><label data-i18n="pin_optional">4-digit PIN (optional)</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="newUserPin" data-i18n-ph="pin_ph" placeholder="····"></div>
-      <button class="btn btn-primary" id="createUserBtn" style="width:100%" data-i18n="create_profile">Create Profile</button>
+    <div id="newPersonForm" class="card gate-card hidden">
+      <div class="field"><label for="newUserName" data-i18n="your_name">Your name</label><input type="text" id="newUserName" autocomplete="off" data-i18n-ph="your_name_ph" placeholder="e.g. Aleks"></div>
+      <div class="field"><label for="newUserPin" data-i18n="pin_optional">4-digit PIN (optional)</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="newUserPin" class="pin-input" data-i18n-ph="pin_ph" placeholder="····"></div>
+      <button class="btn btn-primary" id="createUserBtn" type="button" style="width:100%" data-i18n="create_profile">Create Profile</button>
     </div>
 
-    <div id="pinForm" class="hidden" style="margin-top:14px">
-      <p id="pinForLabel" style="font-size:13px;color:var(--text-dim)"></p>
-      <div class="field"><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="pinInput" data-i18n-ph="pin_ph" placeholder="····" data-i18n-aria="pin_label" aria-label="PIN"></div>
+    <div id="pinForm" class="card gate-card hidden">
+      <p id="pinForLabel" class="pin-for"></p>
+      <div class="field"><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="pinInput" class="pin-input" data-i18n-ph="pin_ph" placeholder="····" data-i18n-aria="pin_label" aria-label="PIN"></div>
       <div class="modal-actions">
-        <button class="btn btn-secondary" id="pinBackBtn" data-i18n="back">Back</button>
-        <button class="btn btn-primary" id="pinUnlockBtn" data-i18n="unlock">Unlock</button>
+        <button class="btn btn-secondary" id="pinBackBtn" type="button" data-i18n="back">Back</button>
+        <button class="btn btn-primary" id="pinUnlockBtn" type="button" data-i18n="unlock">Unlock</button>
       </div>
     </div>
   </div>
@@ -67,7 +73,23 @@
 <main>
   <div id="iosHint" class="hint-banner" style="display:none">
     <span data-i18n="ios_hint">Install this app: tap Share, then "Add to Home Screen".</span>
-    <button id="iosHintClose"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    <button id="iosHintClose" type="button" data-i18n-aria="close"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+  </div>
+
+  <!-- In-app reminder / "did you eat?" (only while the app is open, only when the user switched reminders on) -->
+  <div class="reminder-bar" id="reminderBar" role="status" aria-live="polite" hidden>
+    <div class="rb-row">
+      <span class="rb-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span>
+      <div class="rb-body">
+        <div class="rb-title" id="reminderTitle"></div>
+        <div class="rb-sub" id="reminderSub" hidden></div>
+      </div>
+    </div>
+    <div class="rb-actions">
+      <button class="chip-btn chip-primary" id="reminderAte" type="button"></button>
+      <button class="chip-btn" id="reminderLater" type="button"></button>
+      <button class="chip-btn" id="reminderSkip" type="button"></button>
+    </div>
   </div>
 
   <!-- TODAY -->
@@ -129,7 +151,7 @@
       </div>
     </div>
 
-    <div class="section-head"><h2 class="section-heading" data-i18n="meals_title">Meals</h2></div>
+    <div class="section-head"><h2 class="section-heading" data-i18n="meals_title">Meals</h2><span class="section-note" id="nextMeal" hidden></span></div>
     <div class="card list-card" id="entriesCard">
       <div id="entriesList"></div>
       <div id="dayMarkRow" class="day-mark-row" hidden></div>
@@ -166,71 +188,126 @@
     </button>
   </section>
 
-  <!-- HISTORY -->
+  <!-- PROGRESS -->
   <section class="tab-panel" id="tab-history">
-    <div class="card">
-      <h2 class="section-title" data-i18n="weight_trend_title">Weight Trend</h2>
-      <div class="field-row">
-        <div class="field" style="flex:1;margin-bottom:0">
-          <input type="number" id="weightLogInput" step="0.1" data-i18n-ph="weight_kg" placeholder="kg" data-i18n-aria="weight_kg" aria-label="Weight (kg)">
+    <div class="card weight-hero" id="weightHero">
+      <div class="wh-top">
+        <div class="wh-main">
+          <div class="wh-label" data-i18n="weight_now_label">Current weight</div>
+          <div class="wh-value"><span id="weightNow">–</span><span class="wh-unit" id="weightUnit" data-i18n="kg_unit">kg</span></div>
+          <div class="wh-delta" id="weightDelta"></div>
         </div>
-        <button class="btn btn-primary" id="logWeightBtn" data-i18n="log_weight_btn">Log</button>
+        <div class="wh-spark" id="weightSpark" aria-hidden="true"></div>
       </div>
-      <button class="btn btn-secondary" id="scanScaleBtn" type="button" style="width:100%;margin-top:10px"><svg class="icon-inline" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg> <span data-i18n="scan_scale_btn">Scan scale screenshot</span></button>
+      <div class="wh-log">
+        <div class="field wh-input">
+          <label class="sr-only" for="weightLogInput" data-i18n="weight_kg">Weight (kg)</label>
+          <input type="number" id="weightLogInput" step="0.1" inputmode="decimal" data-i18n-ph="weight_kg" placeholder="kg">
+        </div>
+        <button class="btn btn-primary" id="logWeightBtn" type="button" data-i18n="log_weight_btn">Log</button>
+        <button class="btn btn-secondary btn-icon-only" id="scanScaleBtn" type="button" data-i18n-aria="scan_scale_btn" data-i18n-title="scan_scale_btn"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></button>
+      </div>
       <input type="file" id="scaleScanInput" accept="image/*">
       <div id="scaleScanInfo" class="scale-scan-info" hidden></div>
-      <details class="manual-goals-details" id="scaleCompositionDetails">
+      <details class="fold-inline" id="scaleCompositionDetails">
         <summary data-i18n="scale_optional_fields_label">+ Add body composition (optional)</summary>
-        <div class="field"><label data-i18n="fat_mass_kg_label">Fat mass (kg)</label><input type="number" step="0.1" id="scaleFatMass"></div>
-        <div class="field"><label data-i18n="muscle_mass_kg_label">Muscle mass (kg)</label><input type="number" step="0.1" id="scaleMuscleMass"></div>
-        <div class="field"><label data-i18n="water_pct_label">Water (%)</label><input type="number" step="0.1" id="scaleWaterPct"></div>
+        <div class="comp-grid">
+          <div class="field"><label for="scaleFatMass" data-i18n="fat_mass_kg_label">Fat mass (kg)</label><input type="number" step="0.1" inputmode="decimal" id="scaleFatMass"></div>
+          <div class="field"><label for="scaleMuscleMass" data-i18n="muscle_mass_kg_label">Muscle mass (kg)</label><input type="number" step="0.1" inputmode="decimal" id="scaleMuscleMass"></div>
+          <div class="field"><label for="scaleWaterPct" data-i18n="water_pct_label">Water (%)</label><input type="number" step="0.1" inputmode="decimal" id="scaleWaterPct"></div>
+        </div>
       </details>
-      <div id="weightLogList" style="margin-top:10px"></div>
     </div>
 
-    <div class="card">
-      <h2 class="section-title" data-i18n="history_title">Last 14 days</h2>
-      <div id="historyList"></div>
+    <div class="section-head"><h2 class="section-heading" data-i18n="history_title">Last 14 days</h2></div>
+    <div class="card chart-card">
+      <div class="hc-caption"><span class="hc-avg" id="historyAvg"></span><span class="hc-legend" id="historyLegend"></span></div>
+      <div class="hc" id="historyChart" role="group" data-i18n-aria="history_chart_label"></div>
+      <div class="hc-day" id="historyDay" aria-live="polite"></div>
+      <p class="history-hint" id="historyHint" hidden></p>
+    </div>
+
+    <div class="section-head"><h2 class="section-heading" data-i18n="weight_log_title">Weigh-ins</h2></div>
+    <div class="card list-card plain" id="weightLogCard">
+      <div id="weightLogList"></div>
     </div>
   </section>
 
   <!-- PLAN -->
   <section class="tab-panel" id="tab-plan">
+    <div class="card goals-hero" id="goalsHero">
+      <div class="gh-top">
+        <div class="gh-main">
+          <div class="gh-label" data-i18n="goals_today_label">Daily targets</div>
+          <div class="gh-value"><span id="ghCalories">–</span><span class="gh-unit" data-i18n="kcal_unit">kcal</span></div>
+        </div>
+        <span class="gh-tag" id="ghGoalType" hidden></span>
+      </div>
+      <div class="gh-grid">
+        <div class="gh-cell protein"><div class="gh-cv" id="ghProtein">–</div><div class="gh-cl" data-i18n="protein">Protein</div></div>
+        <div class="gh-cell carbs"><div class="gh-cv" id="ghCarbs">–</div><div class="gh-cl" data-i18n="carbs_abbr">Carbs</div></div>
+        <div class="gh-cell fat"><div class="gh-cv" id="ghFat">–</div><div class="gh-cl" data-i18n="fat">Fat</div></div>
+        <div class="gh-cell water"><div class="gh-cv" id="ghWater">–</div><div class="gh-cl" data-i18n="water_title">Water</div></div>
+      </div>
+      <details class="fold-inline manual-goals-details" id="manualGoalsDetails">
+        <summary data-i18n="manual_override">Manual goal override</summary>
+        <div class="goal-fields">
+          <div class="field"><label for="goalCalories" data-i18n="daily_calories">Daily Calories</label><input type="number" inputmode="numeric" id="goalCalories"></div>
+          <div class="field"><label for="goalWater" data-i18n="daily_water_ml">Daily Water (ml)</label><input type="number" inputmode="numeric" id="goalWater"></div>
+          <div class="field"><label for="goalProtein" data-i18n="protein_g">Protein (g)</label><input type="number" inputmode="numeric" id="goalProtein"></div>
+          <div class="field"><label for="goalCarbs" data-i18n="carbs_g">Carbs (g)</label><input type="number" inputmode="numeric" id="goalCarbs"></div>
+          <div class="field"><label for="goalFat" data-i18n="fat_g">Fat (g)</label><input type="number" inputmode="numeric" id="goalFat"></div>
+        </div>
+        <button class="btn btn-secondary" id="saveGoalsBtn" type="button" style="width:100%" data-i18n="save_manual_goals">Save Manual Goals</button>
+      </details>
+    </div>
+
+    <div class="card schedule-card" id="scheduleCard">
+      <div class="sc-head">
+        <div>
+          <h2 class="section-title" data-i18n="schedule_title">Meal schedule</h2>
+          <p class="sc-sub" id="scheduleSummary"></p>
+        </div>
+        <button class="chip-btn" id="scheduleEditBtn" type="button" data-i18n="schedule_edit">Edit</button>
+      </div>
+      <div class="sc-chips" id="scheduleChips"></div>
+    </div>
+
     <div class="card analyst-feed-card" id="analystFeedCard" hidden>
       <h2 class="section-title" data-i18n="analyst_feed_title">Analyst Feed</h2>
       <div id="analystFeedLatest"></div>
-      <details class="manual-goals-details" id="analystFeedHistoryDetails">
+      <details class="fold-inline" id="analystFeedHistoryDetails">
         <summary data-i18n="analyst_feed_history_label">+ Show recent history</summary>
         <div id="analystFeedHistory"></div>
       </details>
     </div>
 
-    <div class="card">
-      <h2 class="section-title" data-i18n="profile_title">Your Profile</h2>
+    <details class="card fold" id="profileFold">
+      <summary><span data-i18n="profile_title">Your Profile</span></summary>
       <div class="unit-toggle">
-        <button class="unit-btn active" data-units="metric" data-i18n="metric">Metric</button>
-        <button class="unit-btn" data-units="imperial" data-i18n="imperial">Imperial</button>
+        <button class="unit-btn active" type="button" data-units="metric" data-i18n="metric">Metric</button>
+        <button class="unit-btn" type="button" data-units="imperial" data-i18n="imperial">Imperial</button>
       </div>
 
       <div class="field-row">
         <div class="field">
-          <label id="heightLabel" data-i18n="height_cm">Height (cm)</label>
-          <input type="number" id="heightCm" placeholder="175">
+          <label id="heightLabel" for="heightCm" data-i18n="height_cm">Height (cm)</label>
+          <input type="number" id="heightCm" inputmode="decimal" placeholder="175">
         </div>
         <div class="field imperial-only" style="display:none">
-          <label>&nbsp;</label>
-          <input type="number" id="heightIn" placeholder="in" data-i18n-aria="height_in" aria-label="Height (in)">
+          <label for="heightIn">&nbsp;</label>
+          <input type="number" id="heightIn" inputmode="decimal" placeholder="in" data-i18n-aria="height_in" aria-label="Height (in)">
         </div>
         <div class="field">
-          <label id="weightLabel" data-i18n="weight_kg">Weight (kg)</label>
-          <input type="number" id="weightKg" placeholder="75">
+          <label id="weightLabel" for="weightKg" data-i18n="weight_kg">Weight (kg)</label>
+          <input type="number" id="weightKg" inputmode="decimal" placeholder="75">
         </div>
       </div>
 
       <div class="field-row">
-        <div class="field"><label data-i18n="age">Age</label><input type="number" id="age" placeholder="30"></div>
+        <div class="field"><label for="age" data-i18n="age">Age</label><input type="number" id="age" inputmode="numeric" placeholder="30"></div>
         <div class="field">
-          <label data-i18n="sex">Sex</label>
+          <label for="sex" data-i18n="sex">Sex</label>
           <select id="sex">
             <option value="male" data-i18n="sex_male">Male</option>
             <option value="female" data-i18n="sex_female">Female</option>
@@ -240,7 +317,7 @@
       </div>
 
       <div class="field">
-        <label data-i18n="activity_level">Activity level</label>
+        <label for="activityLevel" data-i18n="activity_level">Activity level</label>
         <select id="activityLevel">
           <option value="sedentary" data-i18n="activity_sedentary">Sedentary — desk job, little exercise</option>
           <option value="light" data-i18n="activity_light">Light — exercise 1-3 days/week</option>
@@ -251,7 +328,7 @@
       </div>
 
       <div class="field">
-        <label data-i18n="goal_label">Goal</label>
+        <label for="goalType" data-i18n="goal_label">Goal</label>
         <select id="goalType">
           <option value="lose" data-i18n="goal_lose">Lose weight</option>
           <option value="maintain" data-i18n="goal_maintain">Maintain weight</option>
@@ -260,12 +337,12 @@
       </div>
 
       <div class="field">
-        <label data-i18n="dietary_notes">Dietary preferences / restrictions (optional)</label>
+        <label for="dietaryNotes" data-i18n="dietary_notes">Dietary preferences / restrictions (optional)</label>
         <input type="text" id="dietaryNotes" data-i18n-ph="dietary_notes_ph" placeholder="e.g. vegetarian, no nuts, high-protein">
       </div>
 
-      <button class="btn btn-primary" id="calcGoalsBtn" style="width:100%" data-i18n="calc_goals_btn">Calculate My Goals</button>
-    </div>
+      <button class="btn btn-primary" id="calcGoalsBtn" type="button" style="width:100%" data-i18n="calc_goals_btn">Calculate My Goals</button>
+    </details>
 
     <div class="card" id="suggestedGoalsCard" style="display:none">
       <h2 class="section-title" data-i18n="suggested_targets">Suggested Daily Targets</h2>
@@ -277,14 +354,14 @@
         <div class="target-cell"><div class="target-value" id="sugWater">–</div><div class="target-label" data-i18n="water_title">Water</div></div>
       </div>
       <p class="explain-text" id="sugExplain"></p>
-      <button class="btn btn-primary" id="applyGoalsBtn" style="width:100%" data-i18n="apply_goals_btn">Apply These Goals</button>
+      <button class="btn btn-primary" id="applyGoalsBtn" type="button" style="width:100%" data-i18n="apply_goals_btn">Apply These Goals</button>
     </div>
 
     <div class="card" id="adaptiveTdeeCard">
       <h2 class="section-title" data-i18n="tdee_adaptive_title">Adaptive TDEE</h2>
       <p class="explain-text" data-i18n="tdee_adaptive_desc">Calculates your real maintenance calories from your actual logged weight and intake trend, not just a formula.</p>
-      <button class="btn btn-primary" id="calcAdaptiveTdeeBtn" style="width:100%" data-i18n="tdee_adaptive_btn">Recalculate From My Data</button>
-      <div id="adaptiveTdeeResult" style="margin-top:14px"></div>
+      <button class="btn btn-secondary" id="calcAdaptiveTdeeBtn" type="button" style="width:100%" data-i18n="tdee_adaptive_btn">Recalculate From My Data</button>
+      <div id="adaptiveTdeeResult" class="adaptive-result"></div>
     </div>
 
     <div class="card">
@@ -292,19 +369,9 @@
         <h2 class="section-title" data-i18n="ai_meal_plan">AI Meal Plan</h2>
       </div>
       <p class="explain-text" data-i18n="ai_meal_plan_desc">Generates one full day of meals built around your current goals.</p>
-      <button class="btn btn-primary" id="genPlanBtn" style="width:100%" data-i18n="gen_plan_btn">Generate My Meal Plan</button>
+      <button class="btn btn-primary" id="genPlanBtn" type="button" style="width:100%" data-i18n="gen_plan_btn">Generate My Meal Plan</button>
       <div id="mealPlanResult"></div>
     </div>
-
-    <details class="card manual-goals-details">
-      <summary data-i18n="manual_override">Manual goal override</summary>
-      <div class="field"><label data-i18n="daily_calories">Daily Calories</label><input type="number" id="goalCalories"></div>
-      <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="goalProtein"></div>
-      <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="goalCarbs"></div>
-      <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="goalFat"></div>
-      <div class="field"><label data-i18n="daily_water_ml">Daily Water (ml)</label><input type="number" id="goalWater"></div>
-      <button class="btn btn-secondary" id="saveGoalsBtn" style="width:100%" data-i18n="save_manual_goals">Save Manual Goals</button>
-    </details>
   </section>
 </main>
 
@@ -331,20 +398,11 @@
 <input type="file" id="photoInput" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
 <input type="file" id="photoInput2" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
 
-<!-- Add food: one panel for every way of adding a meal -->
+<!-- Add food: one panel for every way of adding a meal (meal type and time are chosen in the next step) -->
 <div class="modal-backdrop hidden" id="addFoodModal">
   <div class="modal-sheet">
     <div class="sheet-handle"></div>
     <h2 data-i18n="add_food">Add food</h2>
-    <div class="field">
-      <label for="mealTypeSelect" data-i18n="meal_type">Meal type</label>
-      <select class="meal-type-select" id="mealTypeSelect">
-        <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
-        <option value="lunch" data-i18n="meal_lunch">Lunch</option>
-        <option value="dinner" data-i18n="meal_dinner">Dinner</option>
-        <option value="snack" selected data-i18n="meal_snack">Snack</option>
-      </select>
-    </div>
     <div class="add-options">
       <button class="add-option primary" id="takePhotoBtn" type="button">
         <span class="ao-icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
@@ -387,81 +445,133 @@
   </div>
 </div>
 
-<!-- Welcome modal -->
+<!-- Welcome -->
 <div class="modal-backdrop hidden" id="welcomeModal">
   <div class="modal-sheet">
     <div class="sheet-handle"></div>
+    <div class="sheet-badge"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg></div>
     <h2 data-i18n="welcome_title">Welcome</h2>
-    <p class="explain-text" id="welcomeBody" style="font-size:13.5px;line-height:1.6"></p>
-    <button class="btn btn-primary" id="welcomeDismissBtn" style="width:100%" data-i18n="welcome_dismiss">Got it, let's go</button>
+    <p class="explain-text sheet-text" id="welcomeBody"></p>
+    <button class="btn btn-primary" id="welcomeDismissBtn" type="button" style="width:100%" data-i18n="welcome_dismiss">Got it, let's go</button>
   </div>
 </div>
 
-<!-- Photo review modal (optional second angle before analyzing) -->
+<!-- Photo review (optional second angle, a note, meal type and time before analyzing) -->
 <div class="modal-backdrop hidden" id="photoReviewModal">
   <div class="modal-sheet">
     <div class="sheet-handle"></div>
     <h2 data-i18n="photo_review_title">Review Photo</h2>
     <div class="photo-preview-row" id="photoPreviewRow"></div>
-    <button class="btn btn-secondary" id="addAngleBtn" style="width:100%" data-i18n="add_another_angle">+ Add another angle</button>
+    <button class="btn btn-secondary" id="addAngleBtn" type="button" style="width:100%" data-i18n="add_another_angle">+ Add another angle</button>
+    <div class="when-row">
+      <div class="field">
+        <label for="photoMealType" data-i18n="meal_type">Meal type</label>
+        <select class="meal-type-select" id="photoMealType">
+          <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
+          <option value="lunch" data-i18n="meal_lunch">Lunch</option>
+          <option value="dinner" data-i18n="meal_dinner">Dinner</option>
+          <option value="snack" data-i18n="meal_snack">Snack</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="photoMealTime" data-i18n="eaten_at_label">Time you ate</label>
+        <input type="time" id="photoMealTime" class="time-input">
+      </div>
+    </div>
+    <p class="field-hint" data-i18n="eaten_at_hint">Filled with the current time. Change it if you ate earlier.</p>
     <div class="field">
-      <label data-i18n="photo_desc_label">Anything the AI should know? (optional)</label>
+      <label for="photoDescInput" data-i18n="photo_desc_label">Anything the AI should know? (optional)</label>
       <textarea id="photoDescInput" rows="2" data-i18n-ph="photo_desc_placeholder" placeholder="e.g. no sugar, half portion, homemade"></textarea>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="photoCancelBtn" data-i18n="cancel">Cancel</button>
-      <button class="btn btn-primary" id="photoAnalyzeBtn" data-i18n="analyze_btn">Analyze</button>
+      <button class="btn btn-secondary" id="photoCancelBtn" type="button" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="photoAnalyzeBtn" type="button" data-i18n="analyze_btn">Analyze</button>
     </div>
   </div>
 </div>
 
-<!-- What's New modal -->
+<!-- What's New -->
 <div class="modal-backdrop hidden" id="whatsNewModal">
   <div class="modal-sheet">
     <div class="sheet-handle"></div>
     <h2 data-i18n="whats_new_title">What's New</h2>
     <div id="whatsNewContent"></div>
-    <button class="btn btn-primary" id="whatsNewCloseBtn" style="width:100%;margin-top:10px" data-i18n="close">Close</button>
+    <button class="btn btn-primary" id="whatsNewCloseBtn" type="button" style="width:100%;margin-top:10px" data-i18n="close">Close</button>
   </div>
 </div>
 
-<!-- Manual entry modal -->
+<!-- Manual entry -->
 <div class="modal-backdrop hidden" id="manualModal">
   <div class="modal-sheet">
     <div class="sheet-handle"></div>
     <h2 data-i18n="manual_entry_title">Manual Entry</h2>
-    <div class="field"><label data-i18n="description">Description</label><input type="text" id="manualDesc" data-i18n-ph="description_ph" placeholder="e.g. Protein shake"></div>
-    <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="manualCals"></div>
-    <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="manualProtein" value="0"></div>
-    <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="manualCarbs" value="0"></div>
-    <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="manualFat" value="0"></div>
+    <div class="field"><label for="manualDesc" data-i18n="description">Description</label><input type="text" id="manualDesc" autocomplete="off" data-i18n-ph="description_ph" placeholder="e.g. Protein shake"></div>
+    <div class="field"><label for="manualCals" data-i18n="calories">Calories</label><input type="number" id="manualCals" inputmode="numeric"></div>
+    <div class="macro-fields">
+      <div class="field"><label for="manualProtein" data-i18n="protein_g">Protein (g)</label><input type="number" id="manualProtein" inputmode="decimal" value="0"></div>
+      <div class="field"><label for="manualCarbs" data-i18n="carbs_g_short">Carbs (g)</label><input type="number" id="manualCarbs" inputmode="decimal" value="0"></div>
+      <div class="field"><label for="manualFat" data-i18n="fat_g">Fat (g)</label><input type="number" id="manualFat" inputmode="decimal" value="0"></div>
+    </div>
+    <div class="when-row">
+      <div class="field">
+        <label for="manualMealType" data-i18n="meal_type">Meal type</label>
+        <select class="meal-type-select" id="manualMealType">
+          <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
+          <option value="lunch" data-i18n="meal_lunch">Lunch</option>
+          <option value="dinner" data-i18n="meal_dinner">Dinner</option>
+          <option value="snack" data-i18n="meal_snack">Snack</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="manualMealTime" data-i18n="eaten_at_label">Time you ate</label>
+        <input type="time" id="manualMealTime" class="time-input">
+      </div>
+    </div>
+    <p class="field-hint" data-i18n="eaten_at_hint">Filled with the current time. Change it if you ate earlier.</p>
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="manualCancelBtn" data-i18n="cancel">Cancel</button>
-      <button class="btn btn-primary" id="manualSaveBtn" data-i18n="save">Save</button>
+      <button class="btn btn-secondary" id="manualCancelBtn" type="button" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="manualSaveBtn" type="button" data-i18n="save">Save</button>
     </div>
   </div>
 </div>
 
-<!-- Favorites (quick add) modal -->
+<!-- Favorites (quick add) -->
 <div class="modal-backdrop hidden" id="favoritesModal">
   <div class="modal-sheet">
     <div class="sheet-handle"></div>
     <h2 data-i18n="favorites_title">Favorites</h2>
+    <div class="when-row">
+      <div class="field">
+        <label for="favMealType" data-i18n="meal_type">Meal type</label>
+        <select class="meal-type-select" id="favMealType">
+          <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
+          <option value="lunch" data-i18n="meal_lunch">Lunch</option>
+          <option value="dinner" data-i18n="meal_dinner">Dinner</option>
+          <option value="snack" data-i18n="meal_snack">Snack</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="favMealTime" data-i18n="eaten_at_label">Time you ate</label>
+        <input type="time" id="favMealTime" class="time-input">
+      </div>
+    </div>
     <div id="favoritesList"></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="favoritesCloseBtn" style="width:100%" data-i18n="close">Close</button>
+      <button class="btn btn-secondary" id="favoritesCloseBtn" type="button" style="width:100%" data-i18n="close">Close</button>
     </div>
   </div>
 </div>
 
-<!-- Edit entry modal -->
+<!-- Edit entry -->
 <div class="modal-backdrop hidden" id="editModal">
   <div class="modal-sheet">
     <div class="sheet-handle"></div>
     <h2 data-i18n="edit_entry_title">Edit Entry</h2>
 
     <div class="edit-section">
-      <div class="field" style="margin-bottom:0"><label data-i18n="meal_type">Meal type</label>
+      <div class="when-row">
+      <div class="field">
+        <label for="editMealType" data-i18n="meal_type">Meal type</label>
         <select class="meal-type-select" id="editMealType">
           <option value="breakfast" data-i18n="meal_breakfast">Breakfast</option>
           <option value="lunch" data-i18n="meal_lunch">Lunch</option>
@@ -469,6 +579,12 @@
           <option value="snack" data-i18n="meal_snack">Snack</option>
         </select>
       </div>
+      <div class="field">
+        <label for="editMealTime" data-i18n="eaten_at_label">Time you ate</label>
+        <input type="time" id="editMealTime" class="time-input">
+      </div>
+    </div>
+      <p class="field-hint" id="editTimeNote"></p>
     </div>
 
     <div id="editItemsSection" class="edit-section hidden">
@@ -478,10 +594,12 @@
 
     <details class="edit-section edit-advanced-details" id="editAdvancedDetails">
       <summary data-i18n="edit_numbers_manually">Edit numbers manually</summary>
-      <div class="field"><label data-i18n="calories">Calories</label><input type="number" id="editCals"></div>
-      <div class="field"><label data-i18n="protein_g">Protein (g)</label><input type="number" id="editProtein"></div>
-      <div class="field"><label data-i18n="carbs_g">Carbs (g)</label><input type="number" id="editCarbs"></div>
-      <div class="field"><label data-i18n="fat_g">Fat (g)</label><input type="number" id="editFat"></div>
+      <div class="field"><label for="editCals" data-i18n="calories">Calories</label><input type="number" id="editCals" inputmode="numeric"></div>
+      <div class="macro-fields">
+        <div class="field"><label for="editProtein" data-i18n="protein_g">Protein (g)</label><input type="number" id="editProtein" inputmode="decimal"></div>
+        <div class="field"><label for="editCarbs" data-i18n="carbs_g_short">Carbs (g)</label><input type="number" id="editCarbs" inputmode="decimal"></div>
+        <div class="field"><label for="editFat" data-i18n="fat_g">Fat (g)</label><input type="number" id="editFat" inputmode="decimal"></div>
+      </div>
     </details>
 
     <div class="edit-secondary">
@@ -490,69 +608,122 @@
     </div>
 
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="editCancelBtn" data-i18n="cancel">Cancel</button>
-      <button class="btn btn-primary" id="editSaveBtn" data-i18n="save">Save</button>
+      <button class="btn btn-secondary" id="editCancelBtn" type="button" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="editSaveBtn" type="button" data-i18n="save">Save</button>
     </div>
   </div>
 </div>
 
-<!-- Settings modal -->
+<!-- Meal schedule + in-app reminders -->
+<div class="modal-backdrop hidden" id="scheduleModal">
+  <div class="modal-sheet">
+    <div class="sheet-handle"></div>
+    <h2 data-i18n="schedule_title">Meal schedule</h2>
+    <p class="explain-text sheet-text" data-i18n="schedule_desc">Choose when you plan to eat. It only shows what comes next; nothing is tracked or changed by it.</p>
+    <div class="schedule-rows" id="scheduleRows"></div>
+    <div class="schedule-tools">
+      <button class="btn btn-secondary" id="scheduleAddBtn" type="button"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> <span data-i18n="schedule_add">Add a meal</span></button>
+      <button class="btn btn-secondary" id="schedulePresetBtn" type="button" data-i18n="schedule_preset">Use 08:00 · 13:00 · 19:00</button>
+    </div>
+    <hr class="settings-divider">
+    <div class="settings-toggle-row">
+      <label class="toggle-switch">
+        <input type="checkbox" id="remindersToggle" aria-labelledby="remindersText">
+        <span class="toggle-slider"></span>
+      </label>
+      <span id="remindersText" data-i18n="reminders_toggle">Reminders in the app</span>
+    </div>
+    <p class="explain-text sheet-text" data-i18n="reminders_desc">Off until you turn it on. They appear only while the app is open: no notifications in the background.</p>
+    <div class="field" id="leadField">
+      <label for="leadSelect" data-i18n="reminders_lead">Remind me before the planned time</label>
+      <select id="leadSelect">
+        <option value="0" data-i18n="lead_0">At the planned time</option>
+        <option value="5" data-i18n="lead_5">5 minutes before</option>
+        <option value="10" data-i18n="lead_10">10 minutes before</option>
+        <option value="15" data-i18n="lead_15">15 minutes before</option>
+        <option value="30" data-i18n="lead_30">30 minutes before</option>
+        <option value="60" data-i18n="lead_60">1 hour before</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="scheduleCancelBtn" type="button" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" id="scheduleSaveBtn" type="button" data-i18n="save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings -->
 <div class="modal-backdrop hidden" id="settingsModal">
   <div class="modal-sheet">
     <div class="sheet-handle"></div>
     <h2 data-i18n="settings_title">Settings</h2>
 
-    <h3 class="settings-subtitle" id="themeLabel" data-i18n="appearance_theme">Theme</h3>
-    <div class="seg" id="themeSeg" role="radiogroup" aria-labelledby="themeLabel">
-      <button type="button" role="radio" aria-checked="false" data-theme-choice="light" data-i18n="theme_light">Light</button>
-      <button type="button" role="radio" aria-checked="false" data-theme-choice="dark" data-i18n="theme_dark">Dark</button>
-      <button type="button" role="radio" aria-checked="false" data-theme-choice="system" data-i18n="theme_system">System</button>
-    </div>
-    <h3 class="settings-subtitle" id="modeLabel" data-i18n="appearance_mode">Style</h3>
-    <div class="seg" id="modeSeg" role="radiogroup" aria-labelledby="modeLabel">
-      <button type="button" role="radio" aria-checked="false" data-mode-choice="normal" data-i18n="mode_normal">Normal</button>
-      <button type="button" role="radio" aria-checked="false" data-mode-choice="roman" data-i18n="mode_roman">Roman Legion</button>
-    </div>
-    <div class="settings-links">
-      <button class="row-link" id="langBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span class="row-link-text" data-i18n="language_label">Language</span><span class="row-link-value" id="langValue">EN</span></button>
-      <button class="row-link" id="legionPreviewBtn" type="button" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg><span class="row-link-text" data-i18n="legion_preview_open">Preview the centurion's reactions (demo)</span></button>
-      <button class="row-link" id="whatsNewBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span class="row-link-text" data-i18n="whats_new_title">What's New</span></button>
-      <button class="row-link" id="installBtn" type="button" style="display:none"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span class="row-link-text" data-i18n="install_app">Install the app</span></button>
-    </div>
+    <section class="set-group" aria-labelledby="setLookTitle">
+      <h3 class="set-title" id="setLookTitle" data-i18n="settings_group_look">Appearance</h3>
+      <div class="set-label" id="themeLabel" data-i18n="appearance_theme">Theme</div>
+      <div class="seg" id="themeSeg" role="radiogroup" aria-labelledby="themeLabel">
+        <button type="button" role="radio" aria-checked="false" data-theme-choice="light" data-i18n="theme_light">Light</button>
+        <button type="button" role="radio" aria-checked="false" data-theme-choice="dark" data-i18n="theme_dark">Dark</button>
+        <button type="button" role="radio" aria-checked="false" data-theme-choice="system" data-i18n="theme_system">System</button>
+      </div>
+      <div class="set-label" id="modeLabel" data-i18n="appearance_mode">Style</div>
+      <div class="seg" id="modeSeg" role="radiogroup" aria-labelledby="modeLabel">
+        <button type="button" role="radio" aria-checked="false" data-mode-choice="normal" data-i18n="mode_normal">Normal</button>
+        <button type="button" role="radio" aria-checked="false" data-mode-choice="roman" data-i18n="mode_roman">Roman Legion</button>
+      </div>
+      <div class="settings-links">
+        <button class="row-link" id="langBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg><span class="row-link-text" data-i18n="language_label">Language</span><span class="row-link-value" id="langValue">EN</span></button>
+        <button class="row-link" id="legionPreviewBtn" type="button" hidden><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg><span class="row-link-text" data-i18n="legion_preview_open">Preview the centurion's reactions (demo)</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+      </div>
+    </section>
 
-    <hr class="settings-divider">
+    <section class="set-group" aria-labelledby="setMealsTitle">
+      <h3 class="set-title" id="setMealsTitle" data-i18n="settings_group_meals">Meals and reminders</h3>
+      <div class="settings-links">
+        <button class="row-link" id="scheduleOpenBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg><span class="row-link-text" data-i18n="schedule_short">Schedule</span><span class="row-link-value" id="scheduleValue"></span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+      </div>
+    </section>
 
-    <div class="field"><label for="settingsName" data-i18n="your_name">Your name</label><input type="text" id="settingsName"></div>
-    <button class="btn btn-secondary" id="settingsSaveNameBtn" style="width:100%" data-i18n="save">Save</button>
+    <section class="set-group" aria-labelledby="setProfileTitle">
+      <h3 class="set-title" id="setProfileTitle" data-i18n="settings_group_profile">Profile</h3>
+      <div class="field"><label for="settingsName" data-i18n="your_name">Your name</label><input type="text" id="settingsName" autocomplete="off"></div>
+      <button class="btn btn-secondary" id="settingsSaveNameBtn" type="button" style="width:100%" data-i18n="save">Save</button>
+      <details class="fold-inline" id="pinDetails">
+        <summary data-i18n="change_pin">Change PIN</summary>
+        <div class="field hidden" id="settingsOldPinField"><label for="settingsOldPin" data-i18n="old_pin">Current PIN</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="settingsOldPin" data-i18n-ph="pin_ph" placeholder="····"></div>
+        <div class="field"><label for="settingsNewPin" data-i18n="new_pin_optional">New 4-digit PIN (leave blank to remove)</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="settingsNewPin" data-i18n-ph="pin_ph" placeholder="····"></div>
+        <button class="btn btn-secondary" id="settingsSavePinBtn" type="button" style="width:100%" data-i18n="save_pin">Save PIN</button>
+      </details>
+    </section>
 
-    <hr class="settings-divider">
+    <section class="set-group" aria-labelledby="setAnalystTitle">
+      <h3 class="set-title" id="setAnalystTitle" data-i18n="settings_group_analyst">Targets</h3>
+      <div class="settings-toggle-row">
+        <label class="toggle-switch">
+          <input type="checkbox" id="autoApplyToggle" checked aria-labelledby="autoApplyText">
+          <span class="toggle-slider"></span>
+        </label>
+        <span id="autoApplyText" data-i18n="auto_apply_toggle_label">Auto-Apply Targets Automatically</span>
+      </div>
+      <p class="explain-text sheet-text" data-i18n="auto_apply_toggle_desc">When on, the Analyst engine can change your calorie/macro targets by itself after a new weigh-in. When off, it still evaluates and logs to the Analyst Feed, but never changes your targets without you applying it manually.</p>
+    </section>
 
-    <h3 class="settings-subtitle" data-i18n="change_pin">Change PIN</h3>
-    <div class="field hidden" id="settingsOldPinField"><label data-i18n="old_pin">Current PIN</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="settingsOldPin" data-i18n-ph="pin_ph" placeholder="····"></div>
-    <div class="field"><label data-i18n="new_pin_optional">New 4-digit PIN (leave blank to remove)</label><input type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="4" id="settingsNewPin" data-i18n-ph="pin_ph" placeholder="····"></div>
-    <button class="btn btn-secondary" id="settingsSavePinBtn" style="width:100%" data-i18n="save_pin">Save PIN</button>
+    <section class="set-group" aria-labelledby="setMoreTitle">
+      <h3 class="set-title" id="setMoreTitle" data-i18n="settings_group_more">More</h3>
+      <div class="settings-links">
+        <button class="row-link" id="whatsNewBtn" type="button"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg><span class="row-link-text" data-i18n="whats_new_title">What's New</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+        <button class="row-link" id="installBtn" type="button" style="display:none"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg><span class="row-link-text" data-i18n="install_app">Install the app</span></button>
+      </div>
+    </section>
 
-    <hr class="settings-divider">
-
-    <div class="settings-toggle-row">
-      <label class="toggle-switch">
-        <input type="checkbox" id="autoApplyToggle" checked aria-labelledby="autoApplyText">
-        <span class="toggle-slider"></span>
-      </label>
-      <span id="autoApplyText" data-i18n="auto_apply_toggle_label">Auto-Apply Targets Automatically</span>
-    </div>
-    <p class="explain-text" data-i18n="auto_apply_toggle_desc" style="margin-top:-6px">When on, the Analyst engine can change your calorie/macro targets by itself after a new weigh-in. When off, it still evaluates and logs to the Analyst Feed, but never changes your targets without you applying it manually.</p>
-
-    <hr class="settings-divider">
-
-    <button class="btn btn-secondary" id="resetTodayBtn" style="width:100%" data-i18n="reset_today_btn">Reset Today's Log</button>
-
-    <hr class="settings-divider">
-
-    <button class="btn btn-danger" id="deleteProfileBtn" style="width:100%" data-i18n="delete_profile_btn">Delete My Profile</button>
+    <section class="set-group set-danger" aria-labelledby="setDangerTitle">
+      <h3 class="set-title" id="setDangerTitle" data-i18n="settings_group_danger">Careful</h3>
+      <button class="btn btn-secondary" id="resetTodayBtn" type="button" style="width:100%" data-i18n="reset_today_btn">Reset Today's Log</button>
+      <button class="btn btn-danger" id="deleteProfileBtn" type="button" style="width:100%" data-i18n="delete_profile_btn">Delete My Profile</button>
+    </section>
 
     <div class="modal-actions">
-      <button class="btn btn-secondary" id="settingsCloseBtn" style="width:100%" data-i18n="close">Close</button>
+      <button class="btn btn-secondary" id="settingsCloseBtn" type="button" style="width:100%" data-i18n="close">Close</button>
     </div>
   </div>
 </div>
@@ -560,6 +731,7 @@
 <script src="/i18n.js"></script>
 <script src="/whatsnew.js"></script>
 <script src="/units.js"></script>
+<script src="/schedule.js"></script>
 <script src="/legion.js"></script>
 <script src="/dialogs.js"></script>
 <script src="/api.js"></script>

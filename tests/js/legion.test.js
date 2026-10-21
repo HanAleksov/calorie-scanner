@@ -47,7 +47,7 @@ test("the reminder fills in the time it is given and leaves nothing unresolved",
 
 test("no other line carries a placeholder", () => {
   for (const [kind, set] of Object.entries(L.LINES)) {
-    if (kind === "remind") continue;
+    if (kind === "remind" || kind === "idle_next") continue;
     for (const lang of ["bg", "en"]) for (const line of set[lang]) assert.ok(!/\{\w+\}/.test(line), `${kind}: ${line}`);
   }
 });
@@ -57,7 +57,22 @@ test("an unknown language falls back to English; an unknown kind is an error", (
   assert.throws(() => L.reaction("celebrate", "bg", 0));
 });
 
-test("the idle line comes from real totals only (nothing about times)", () => {
+test("with a planned meal ahead the plain idle line becomes the next-report line, and never overrides the others", () => {
+  const next = { meal: "обяд", time: "13:00" };
+  assert.equal(L.idleKind({ entries: 3, calories: 1440, goal: 2400, next }), "idle_next");
+  assert.equal(L.idleKind({ entries: 3, calories: 1440, goal: 2400 }), "idle");
+  assert.equal(L.idleKind({ entries: 0, calories: 0, goal: 2400, next }), "idle_empty");
+  assert.equal(L.idleKind({ entries: 3, calories: 2600, goal: 2400, goalType: "lose", next }), "idle_over");
+  assert.equal(L.idleKind({ entries: 3, calories: 2400, goal: 2400, goalType: "gain", next }), "idle_done");
+  for (const lang of ["bg", "en"]) {
+    const r = L.reaction("idle_next", lang, 0, next);
+    assert.ok(r.text.includes("13:00") && r.text.includes("обяд"), r.text);
+    assert.ok(!/\{\w+\}/.test(r.text));
+    assert.equal(r.mood, "idle");
+  }
+});
+
+test("the idle line comes from real totals only (the schedule only adds the next-meal wording)", () => {
   assert.equal(L.idleKind({ entries: 0, calories: 0, goal: 2400 }), "idle_empty");
   assert.equal(L.idleKind({ entries: 3, calories: 1440, goal: 2400 }), "idle");
   assert.equal(L.idleKind({ entries: 3, calories: 2400, goal: 2400, goalType: "gain" }), "idle_done");

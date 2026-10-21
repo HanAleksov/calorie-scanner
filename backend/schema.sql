@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS entries (
     notes TEXT,
     image_path TEXT,
     image_path2 TEXT,               -- optional second-angle photo
-    energy_score REAL               -- 0-5, "good energy" quality rating, null for manual entries
+    energy_score REAL,              -- 0-5, "good energy" quality rating, null for manual entries
+    eaten_time TEXT                 -- "HH:MM" the user SAID they ate (same day as created_at); NULL = never confirmed
+                                    -- (every entry from before this column existed). created_at is only when it was logged.
 );
 
 CREATE TABLE IF NOT EXISTS goals (
@@ -123,3 +125,21 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- The user's chosen eating schedule: up to 6 slots (a meal type at a clock time), in display order. Purely the
+-- user's own plan: it drives the Today screen's "next meal" line and the in-app reminders, nothing else.
+CREATE TABLE IF NOT EXISTS meal_schedule (
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    slot INTEGER NOT NULL,         -- 1..6, sorted by time on every save
+    meal_type TEXT NOT NULL,       -- breakfast | lunch | dinner | snack
+    at_time TEXT NOT NULL,         -- "HH:MM", local (Europe/Sofia) wall-clock time
+    PRIMARY KEY (user_id, slot)
+);
+
+-- In-app reminders are OFF until the user turns them on (no row = off). lead_min = how many minutes before a slot the
+-- open app starts nudging. Reminders only ever show while the app is open (no push / background notifications).
+CREATE TABLE IF NOT EXISTS reminder_settings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id),
+    enabled INTEGER NOT NULL DEFAULT 0,
+    lead_min INTEGER NOT NULL DEFAULT 15
+);

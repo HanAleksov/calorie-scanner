@@ -4,12 +4,16 @@ const WHATS_NEW = [
   {
     version: 13,
     en: [
-      "✨ A fresh look — a calmer Today screen with your calories at a glance, readable macros, meals with photos and water, and one big Add food button that opens photo, manual and favorites in a single panel.",
-      "🎨 Light, dark or system theme, and a new Roman Legion style you can switch on in Settings — independent of each other. The legion style has a stern centurion with a few reactions (in this version they are a preview, clearly marked DEMO).",
+      "✨ A fresh look across the whole app — a calmer Today screen, a Progress screen with your weight and a 14-day calorie chart, a Plan screen with your targets at the top, and a redesigned sign-in, settings and panels.",
+      "🕐 Meal schedule: choose when you plan to eat (Plan or Settings). Today shows what comes next. You can also say when you actually ate — separately from when you logged it. Older entries keep the time they were logged and are not marked as confirmed.",
+      "🔔 Reminders in the app (off until you switch them on): while the app is open it nudges you before a planned meal and asks if you ate when there is no record. No notifications in the background.",
+      "🎨 Light, dark or system theme, and a Roman Legion style you can switch on in Settings. In that style the centurion reacts to your schedule and your records; the reaction preview in Settings is a clearly marked DEMO.",
     ],
     bg: [
-      "✨ Нов вид — по-спокоен екран „Днес“ с калориите накратко, четими макроси, хранения със снимки и вода, и един голям бутон „Добави храна“, който отваря снимка, ръчен запис и любими в един панел.",
-      "🎨 Светла, тъмна или системна тема и нов стил „Римски легион“, който включваш от Настройки — независимо един от друг. Стилът има строг центурион с няколко реакции (в тази версия са преглед, ясно означен като ДЕМО).",
+      "✨ Нов вид в цялото приложение — по-спокоен екран „Днес“, „Прогрес“ с теглото и графика на калориите за 14 дни, „План“ с целите най-отгоре, и обновени вход, настройки и панели.",
+      "🕐 График на храненията: избери кога планираш да ядеш (План или Настройки). „Днес“ показва кое е следващо. Можеш да посочиш и кога наистина си ял — отделно от момента на записване. Старите записи запазват часа на записване и не се водят потвърдени.",
+      "🔔 Напомняния в приложението (изключени, докато не ги включиш): докато приложението е отворено, то те подсеща преди планирано хранене и пита яде ли, когато няма запис. Без известия на заден план.",
+      "🎨 Светла, тъмна или системна тема и стил „Римски легион“, който включваш от Настройки. В него центурионът реагира на графика и на записите ти; прегледът на реакциите в Настройки е ясно означено ДЕМО.",
     ],
   },
   {

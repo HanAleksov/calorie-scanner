@@ -8,6 +8,15 @@ const state = {
   firstTodayRender: true,                       // no count-up / entry animation on the very first paint
   seenEntryIds: new Set(),                      // entries already on screen (only NEW ones animate in)
   legionIdle: "idle",                           // which idle line fits the real totals
+  legionVars: null,                             // {meal, time} for the "next report" line
+  clock: null,                                  // the app's own clock: CSSchedule.clockFrom(/api/today `now`)
+  schedule: { slots: [], reminders: { enabled: false, lead_min: 15 } },   // the user's chosen eating schedule
+  scheduleDraft: null,                          // what the schedule dialog is editing (nothing is saved until Save)
+  reminderLocal: null,                          // today's "later" / "skip" answers (kept in localStorage, never sent)
+  reminderShown: null,                          // which reminder the centurion is reacting to right now
+  addContext: null,                             // {mealType}: the reminder that opened the Add-food panel
+  editInitialTime: "",                          // the eaten time the editor opened with (only a change is sent)
+  historyDays: [], historyGoal: null, historySelected: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -16,7 +25,7 @@ const $ = (id) => document.getElementById(id);
 // meal plan, user list) — kept as raw markup strings since template literals can't reference
 // <svg> elements directly. Static markup in index.html has its own copies inline.
 const ICON = {
-  lock: '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>',
+  lock: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>',
   edit: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path></svg>',
   star: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
   starLg: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>',
@@ -28,12 +37,16 @@ const ICON = {
   sun: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>',
   moon: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>',
   package: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4L7.5 4.21"></path><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>',
+  chevLeft: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>',
+  chev: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>',
+  clock: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
   plate: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="3"></circle></svg>',
 };
 
 function toast(msg) {
   const el = document.createElement("div");
   el.className = "toast";
+  el.setAttribute("role", "status");
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3200);
@@ -51,10 +64,12 @@ const FIELD_LABEL_KEY = {
   height_cm: "height_cm", weight_kg: "weight_kg", age: "age", calories: "calories", protein_g: "protein_g",
   carbs_g: "carbs_g", fat_g: "fat_g", total_calories: "calories", water_ml: "field_water_ml", ml: "field_ml",
   description: "description", name: "your_name", fat_mass_kg: "fat_mass_kg_label",
-  muscle_mass_kg: "muscle_mass_kg_label", water_pct: "water_pct_label",
+  muscle_mass_kg: "muscle_mass_kg_label", water_pct: "water_pct_label", eaten_time: "field_eaten_time",
 };
 function fieldLabel(field) {
   if (/^items\[\d+\]/.test(field)) return t("field_grams");
+  if (/^slots\[\d+\]\.time$/.test(field)) return t("field_time");
+  if (/^slots\[\d+\]\.meal_type$/.test(field)) return t("schedule_row_meal");
   return FIELD_LABEL_KEY[field] ? t(FIELD_LABEL_KEY[field]) : field;
 }
 function failureMessage(result) {
@@ -121,10 +136,13 @@ function toggleLanguage() {
   updateScreenHeader();
   legion.reset();
   previewLegion.reset();
+  state.reminderShown = null;
+  renderScheduleViews();
+  refreshGate();
   if (!$("appRoot").classList.contains("hidden")) {
     loadToday();
     if (document.getElementById("tab-history").classList.contains("active")) loadHistory();
-    if (document.getElementById("tab-plan").classList.contains("active")) loadSavedMealPlan();
+    if (document.getElementById("tab-plan").classList.contains("active")) loadPlanTab();
   } else {
     renderUserList();
   }
@@ -158,7 +176,7 @@ function updateScreenHeader() {
     const day = state.today && state.today.date ? new Date(state.today.date + "T00:00:00") : new Date();
     sub.textContent = day.toLocaleDateString(currentLang() === "bg" ? "bg-BG" : undefined, { day: "numeric", month: "long" });
   } else {
-    sub.textContent = "";
+    sub.textContent = t(tab === "history" ? "sub_history" : "sub_plan");
   }
   const initial = (state.userName || "").trim().charAt(0).toUpperCase();
   $("avatarInitial").textContent = initial || "•";
@@ -223,7 +241,16 @@ async function showGate(notice) {
   note.textContent = notice || "";
   note.classList.toggle("hidden", !notice);
   applyStaticTranslations();
+  refreshGate();
   await renderUserList();
+}
+
+// In Roman style the sign-in screen shows the centurion and speaks to the legionary; otherwise it is the plain screen.
+function refreshGate() {
+  const roman = isRoman();
+  if (roman) setPortraitMood($("gatePortrait"), "idle");
+  const title = document.querySelector("#userGate h1");
+  if (title) title.textContent = t(roman ? "gate_title_roman" : "who_is_this");
 }
 
 // The server said 401 (session ended / replaced). Show the sign-in screen over the app without throwing
@@ -240,13 +267,14 @@ async function renderUserList() {
   const list = $("userList");
   list.innerHTML = users
     .map(
-      (u) => `<button class="pick-user-btn" data-id="${u.id}" data-haspin="${u.has_pin}">
-        <span>${escapeHtml(u.name)}</span>${u.has_pin ? `<span class="pin-lock">${ICON.lock}</span>` : ""}
+      (u) => `<button class="pick-user-btn" type="button" data-id="${u.id}" data-haspin="${u.has_pin}">
+        <span class="pu-avatar" aria-hidden="true">${escapeHtml((u.name || "").trim().charAt(0).toUpperCase() || "•")}</span>
+        <span class="pu-name">${escapeHtml(u.name)}</span>${u.has_pin ? `<span class="pin-lock" title="PIN">${ICON.lock}</span>` : `<span class="pu-go" aria-hidden="true">${ICON.chev}</span>`}
       </button>`
     )
     .join("");
   list.querySelectorAll(".pick-user-btn").forEach((btn) =>
-    btn.addEventListener("click", () => selectUser(Number(btn.dataset.id), btn.dataset.haspin === "1", btn.querySelector("span").textContent))
+    btn.addEventListener("click", () => selectUser(Number(btn.dataset.id), btn.dataset.haspin === "1", btn.querySelector(".pu-name").textContent))
   );
 }
 
@@ -401,6 +429,7 @@ async function openSettings() {
   $("settingsOldPin").value = "";
   $("settingsNewPin").value = "";
   $("autoApplyToggle").checked = !goals || goals.auto_apply_targets !== 0;
+  renderScheduleViews();
   $("settingsModal").classList.remove("hidden");
 }
 
@@ -474,6 +503,8 @@ async function loadToday() {
   if (!res.ok) return;
   const data = await res.json();
   state.today = data;
+  state.clock = CSSchedule.clockFrom(data.now, Date.now());
+  if (data.schedule) state.schedule = data.schedule;
   if (profileRes.ok) {
     const profile = await profileRes.json();
     state.goalType = profile && profile.goal_type;
@@ -485,10 +516,28 @@ async function loadToday() {
   renderDayMark(data);
   $("diaryCount").textContent = data.entries.length === 1 ? t("entries_one") : t("entries_many", { n: data.entries.length });
   updateScreenHeader();
-  state.legionIdle = CSLegion.idleKind({ entries: data.entries.length, calories: data.totals.calories, goal: data.goals.calories, goalType: state.goalType });
-  if (!legion.current) renderLegion(null);
+  renderScheduleViews();
+  refreshIdleLine(state.nextMeal);
   state.firstTodayRender = false;
   loadCachedTip();
+  reminderTick();
+}
+
+// The calm line under the centurion comes from today's real totals; with a planned meal still ahead it names that meal.
+function refreshIdleLine(next) {
+  const d = state.today;
+  if (!d) return;
+  state.nextMeal = next || null;
+  state.legionVars = next ? { meal: mealWord(next.slot.meal_type).toLowerCase(), time: next.slot.time } : null;
+  state.legionIdle = CSLegion.idleKind({
+    entries: d.entries.length, calories: d.totals.calories, goal: d.goals.calories, goalType: state.goalType, next: state.legionVars,
+  });
+  // redraw only when the line itself changed (the tick runs every few seconds; the bubble animates on every redraw)
+  const sig = `${state.legionIdle}|${JSON.stringify(state.legionVars)}|${currentLang()}|${isRoman()}`;
+  if (sig !== state.idleSig) {
+    state.idleSig = sig;
+    if (!legion.current) renderLegion(null);
+  }
 }
 
 // ---------- Day completeness ----------
@@ -705,6 +754,10 @@ function entryTitle(e) {
   return names || t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack");
 }
 
+// Order on the Today list: when it was eaten (confirmed time) or, lacking one, when it was logged.
+const mealClock = (e) => e.eaten_time || e.created_at.slice(11, 16);
+const byMealTime = (a, b) => (mealClock(a) < mealClock(b) ? -1 : mealClock(a) > mealClock(b) ? 1 : a.id - b.id);
+
 function renderEntries(entries) {
   const list = $("entriesList");
   if (!entries.length) {
@@ -716,13 +769,18 @@ function renderEntries(entries) {
   const fresh = new Set(entries.filter((e) => !state.seenEntryIds.has(e.id)).map((e) => e.id));
   list.innerHTML = entries
     .slice()
+    .sort(byMealTime)
     .map((e) => {
       const thumb = e.image_path
         ? `<img class="thumb" src="/uploads/${e.image_path}" alt="" loading="lazy">`
         : `<div class="thumb-placeholder">${ICON.plate}</div>`;
       const lowConf = e.confidence === "low" ? `<span class="badge low-confidence">${t("low_confidence")}</span>` : "";
       const energyBadge = e.energy_score != null ? `<span class="badge energy-badge">${ICON.zap}${e.energy_score}/5</span>` : "";
-      const time = e.created_at.slice(11, 16);
+      // The time the user SAID they ate is shown as such; an entry without one only shows when it was logged
+      // (old entries and entries added without a time: an upload time is not proof of when something was eaten).
+      const timeHtml = e.eaten_time
+        ? `<span class="entry-time confirmed">${ICON.clock}${t("eaten_at_row", { time: e.eaten_time })}</span>`
+        : `<span class="entry-time">${t("logged_at_row", { time: e.created_at.slice(11, 16) })}</span>`;
       const noteLine = e.notes ? `<div class="entry-note">${ICON.note} ${escapeHtml(e.notes)}</div>` : "";
       const title = escapeHtml(entryTitle(e));
       return `
@@ -731,7 +789,7 @@ function renderEntries(entries) {
           <div class="entry-body">
             <div class="entry-title">${title}</div>
             <div class="entry-kcal">${e.total_calories} ${t("kcal_unit")}</div>
-            <div class="entry-meta"><span class="badge">${t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack")}</span><span>${time}</span><span>${t("protein_short")} ${e.protein_g} · ${t("carbs_short")} ${e.carbs_g} · ${t("fat_short")} ${e.fat_g}</span>${energyBadge}${lowConf}</div>
+            <div class="entry-meta"><span class="badge">${t(MEAL_LABEL_KEY[e.meal_type] || "meal_snack")}</span>${timeHtml}<span>${t("protein_short")} ${e.protein_g} · ${t("carbs_short")} ${e.carbs_g} · ${t("fat_short")} ${e.fat_g}</span>${energyBadge}${lowConf}</div>
             ${noteLine}
           </div>
           <div class="entry-actions">
@@ -779,13 +837,13 @@ async function renderFavorites() {
       <div class="entry" data-id="${f.id}">
         <div class="thumb-placeholder">${ICON.starLg}</div>
         <div class="entry-body">
-          <div class="entry-title">${f.total_calories} kcal <span class="badge">${t(MEAL_LABEL_KEY[f.meal_type] || "meal_snack")}</span></div>
-          <div class="entry-items">${escapeHtml(f.name)}</div>
-          <div class="entry-macros">P ${f.protein_g}g · C ${f.carbs_g}g · F ${f.fat_g}g</div>
+          <div class="entry-title">${escapeHtml(f.name)}</div>
+          <div class="entry-kcal">${f.total_calories} ${t("kcal_unit")}</div>
+          <div class="entry-meta"><span class="badge">${t(MEAL_LABEL_KEY[f.meal_type] || "meal_snack")}</span><span>${t("protein_short")} ${f.protein_g} · ${t("carbs_short")} ${f.carbs_g} · ${t("fat_short")} ${f.fat_g}</span></div>
         </div>
         <div class="entry-actions">
-          <button class="log-favorite-btn btn btn-primary" style="padding:8px 12px;font-size:12px">${t("log_this_meal_btn")}</button>
-          <button class="delete-favorite-btn" title="${t("delete")}">${ICON.trash}</button>
+          <button class="log-favorite-btn btn btn-primary" type="button">${t("log_this_meal_btn")}</button>
+          <button class="delete-favorite-btn" type="button" aria-label="${t("delete")}: ${escapeHtml(f.name)}" title="${t("delete")}">${ICON.trash}</button>
         </div>
       </div>`
     )
@@ -805,7 +863,8 @@ async function renderFavorites() {
 }
 
 async function logFavorite(favoriteId) {
-  const result = await write(null, "POST", `/api/favorites/${favoriteId}/log`, { meal_type: $("mealTypeSelect").value });
+  const when = readWhen("fav");
+  const result = await write(null, "POST", `/api/favorites/${favoriteId}/log`, { meal_type: when.meal_type, eaten_time: when.eaten_time || null });
   if (!wrote(result)) return;
   toast(t("logged_from_favorite_toast"));
   $("favoritesModal").classList.add("hidden");
@@ -814,6 +873,7 @@ async function logFavorite(favoriteId) {
 }
 
 $("quickAddBtn").addEventListener("click", () => {
+  seedWhen("fav");
   $("favoritesModal").classList.remove("hidden");
   renderFavorites();
 });
@@ -825,6 +885,11 @@ async function openEdit(id) {
   const e = await res.json();
   state.entryBeingEdited = id;
   $("editMealType").value = e.meal_type;
+  state.editInitialTime = e.eaten_time || "";
+  $("editMealTime").value = state.editInitialTime;
+  $("editTimeNote").textContent = e.eaten_time
+    ? t("edit_time_confirmed", { time: e.created_at.slice(11, 16), eaten: e.eaten_time })
+    : t("edit_time_logged_only", { time: e.created_at.slice(11, 16) });
   $("editCals").value = e.total_calories;
   $("editProtein").value = e.protein_g;
   $("editCarbs").value = e.carbs_g;
@@ -866,6 +931,10 @@ $("editSaveBtn").addEventListener("click", async () => {
   // ONE request: per-item grams (recalculate calories/macros from them) and the details together, so
   // either everything is saved or nothing is.
   const payload = { meal_type: $("editMealType").value };
+  // The eaten time is sent only when the user changed it (an empty field clears it). Leaving it alone never
+  // "confirms" the time of an old entry.
+  const eatenNow = $("editMealTime").value.trim();
+  if (eatenNow !== state.editInitialTime) payload.eaten_time = eatenNow || null;
   const gramsInputs = document.querySelectorAll(".edit-item-grams");
   if (gramsInputs.length) {
     payload.items = Array.from(gramsInputs)
@@ -929,6 +998,7 @@ function renderPhotoPreview() {
 }
 
 function openPhotoReview() {
+  seedWhen("photo");
   renderPhotoPreview();
   $("photoReviewModal").classList.remove("hidden");
 }
@@ -949,7 +1019,9 @@ $("photoAnalyzeBtn").addEventListener("click", () => guard("photo-analyze", asyn
   const formData = new FormData();
   formData.append("image", state.pendingPhotos[0]);
   if (state.pendingPhotos[1]) formData.append("image2", state.pendingPhotos[1]);
-  formData.append("meal_type", $("mealTypeSelect").value);
+  const when = readWhen("photo");
+  formData.append("meal_type", when.meal_type);
+  if (when.eaten_time) formData.append("eaten_time", when.eaten_time);
   formData.append("lang", currentLang());
   const desc = $("photoDescInput").value.trim();
   if (desc) formData.append("description", desc);
@@ -971,7 +1043,10 @@ $("photoAnalyzeBtn").addEventListener("click", () => guard("photo-analyze", asyn
 }));
 
 // ---------- Manual entry ----------
-$("manualEntryBtn").addEventListener("click", () => $("manualModal").classList.remove("hidden"));
+$("manualEntryBtn").addEventListener("click", () => {
+  seedWhen("manual");
+  $("manualModal").classList.remove("hidden");
+});
 $("manualCancelBtn").addEventListener("click", () => $("manualModal").classList.add("hidden"));
 $("manualSaveBtn").addEventListener("click", async () => {
   const desc = $("manualDesc").value.trim();
@@ -980,7 +1055,9 @@ $("manualSaveBtn").addEventListener("click", async () => {
     return;
   }
   const formData = new FormData();
-  formData.append("meal_type", $("mealTypeSelect").value);
+  const when = readWhen("manual");
+  formData.append("meal_type", when.meal_type);
+  if (when.eaten_time) formData.append("eaten_time", when.eaten_time);
   formData.append("description", desc);
   formData.append("total_calories", $("manualCals").value.trim());
   formData.append("protein_g", $("manualProtein").value.trim() || "0");
@@ -995,52 +1072,157 @@ $("manualSaveBtn").addEventListener("click", async () => {
   loadToday();
 });
 
-// ================== HISTORY ==================
+// ================== PROGRESS ==================
+const HISTORY_DAYS = 14;
+const dateLocale = () => (currentLang() === "bg" ? "bg-BG" : undefined);
+const shortDate = (dateStr) => new Date(dateStr + "T00:00:00").toLocaleDateString(dateLocale(), { month: "short", day: "numeric" });
+const longDate = (dateStr) => new Date(dateStr + "T00:00:00").toLocaleDateString(dateLocale(), { weekday: "long", month: "long", day: "numeric" });
+
 async function loadHistory() {
-  const res = await apiFetch("/api/history?days=14");
+  const [res, goalsRes] = await Promise.all([apiFetch(`/api/history?days=${HISTORY_DAYS}`), apiFetch("/api/goals")]);
+  if (!res.ok) return;
   const data = await res.json();
-  const max = Math.max(1, ...data.days.map((d) => d.totals.calories));
-  const hasPartial = data.days.some((d) => d.status === "partial");
-  $("historyList").innerHTML = (hasPartial ? `<p class="history-hint">${t("history_partial_hint")}</p>` : "") + data.days
-    .slice()
-    .reverse()
-    .map((d) => {
-      const pct = Math.round((d.totals.calories / max) * 100);
-      const locale = currentLang() === "bg" ? "bg-BG" : undefined;
-      const label = new Date(d.date + "T00:00:00").toLocaleDateString(locale, { month: "short", day: "numeric" });
-      // A day with nothing logged is *unknown*, not zero — show a dash, not an empty 0 bar.
-      // Partial/skipped days are shown but visually dimmed, since the analyst ignores them.
-      const unknown = d.status !== "complete";
-      const kcalText = d.status === "empty" ? "—" : d.totals.calories;
-      let chip = `<span class="day-status-chip placeholder"></span>`;
-      if (d.status === "partial") {
-        // Primary action: the user really did eat little that day — count what's logged.
-        chip = `<button class="day-status-chip include" data-day="${d.date}" data-next="complete" title="${t("day_status_tap_hint")}">${t("day_status_include")}</button>`;
-      } else if (d.status === "skipped") {
-        chip = `<button class="day-status-chip" data-day="${d.date}" data-next="clear" title="${t("day_status_tap_hint")}">${t("day_status_skipped")}</button>`;
-      } else if (d.status === "complete" && d.mark === "complete") {
-        chip = `<button class="day-status-chip confirmed" data-day="${d.date}" data-next="clear" title="${t("day_status_tap_hint")}">${t("day_status_confirmed")}</button>`;
-      }
-      return `
-        <div class="history-day ${unknown ? "is-unknown" : ""}">
-          <div class="date">${label}</div>
-          <div class="bar-track"><div class="fill" style="width:${d.status === "empty" ? 0 : pct}%"></div></div>
-          <div class="kcal">${kcalText}</div>
-          ${chip}
-        </div>`;
-    })
-    .join("");
-  // Tap: partial -> counted (confirmed); confirmed/skipped -> back to inferred.
-  $("historyList").querySelectorAll("button.day-status-chip").forEach((btn) =>
-    btn.addEventListener("click", async () => {
-      const status = btn.dataset.next === "clear" ? null : btn.dataset.next;
-      if (await setDayMark(btn.dataset.day, status)) loadHistory();
-    })
-  );
+  state.historyDays = data.days;
+  state.historyGoal = goalsRes.ok ? (await goalsRes.json()).calories : null;
+  if (!state.historySelected || !data.days.some((d) => d.date === state.historySelected)) {
+    const logged = data.days.filter((d) => d.status !== "empty");
+    state.historySelected = (logged.length ? logged[logged.length - 1] : data.days[data.days.length - 1]).date;
+  }
+  renderHistory();
   loadWeightLog();
 }
 
-// ---------- Weight trend ----------
+// What the analysis does with a day, in words (a day with nothing logged is unknown, not zero).
+function dayStatusText(d) {
+  if (d.status === "empty") return t("day_nothing");
+  if (d.status === "skipped") return t("day_status_skipped_long");
+  if (d.status === "partial") return t("day_state_partial");
+  return d.mark === "complete" ? t("day_status_complete_marked") : t("day_status_complete_inferred");
+}
+
+// Last 14 days as one chart: a column per day (tap to see that day), a dashed line at the calorie target, days the
+// analysis ignores drawn dim. The selected day is described underneath, with the same "count this day" control as before.
+function renderHistory() {
+  const days = state.historyDays;
+  const goal = state.historyGoal;
+  const top = Math.max(1, goal || 0, ...days.map((d) => d.totals.calories));
+  const today = days.length ? days[days.length - 1].date : "";
+  const cols = days.map((d) => {
+    const pct = d.status === "empty" ? 0 : Math.max(3, Math.round((d.totals.calories / top) * 100));
+    const cls = ["hc-col", d.status !== "complete" ? "is-unknown" : "", d.status === "empty" ? "is-empty" : "", d.date === today ? "is-today" : "",
+      d.date === state.historySelected ? "is-selected" : ""].filter(Boolean).join(" ");
+    const label = t("day_bar_label", { date: shortDate(d.date), kcal: d.status === "empty" ? "0" : d.totals.calories, status: dayStatusText(d) });
+    return `<button type="button" class="${cls}" data-day="${d.date}" aria-pressed="${d.date === state.historySelected}" aria-label="${escapeHtml(label)}"><span class="hc-fill" style="height:${pct}%"></span></button>`;
+  }).join("");
+  const labels = days.map((d) => `<span class="hc-lab${d.date === state.historySelected ? " is-selected" : ""}">${Number(d.date.slice(8, 10))}</span>`).join("");
+  const goalLine = goal ? `<div class="hc-goal" style="bottom:${Math.min(100, (goal / top) * 100)}%"></div>` : "";
+  $("historyChart").innerHTML = `<div class="hc-area">${goalLine}<div class="hc-cols">${cols}</div></div><div class="hc-labels">${labels}</div>`;
+
+  const full = days.filter((d) => d.status === "complete");
+  $("historyLegend").innerHTML = goal ? `<i class="hc-swatch" aria-hidden="true"></i>${t("history_goal_line", { kcal: goal })}` : "";
+  const avg = $("historyAvg");
+  avg.textContent = full.length
+    ? t("history_avg", { kcal: Math.round(full.reduce((n, d) => n + d.totals.calories, 0) / full.length), n: full.length, total: days.length })
+    : t("history_avg_none");
+  const hint = $("historyHint");
+  hint.hidden = !days.some((d) => d.status === "partial");
+  hint.textContent = hint.hidden ? "" : t("history_partial_hint");
+
+  $("historyChart").querySelectorAll(".hc-col").forEach((btn) =>
+    btn.addEventListener("click", () => selectHistoryDay(btn.dataset.day)));
+  renderHistoryDay();
+}
+
+function selectHistoryDay(day) {
+  if (!state.historyDays.some((d) => d.date === day)) return;
+  state.historySelected = day;
+  renderHistory();
+}
+
+function renderHistoryDay() {
+  const days = state.historyDays;
+  const i = days.findIndex((d) => d.date === state.historySelected);
+  const box = $("historyDay");
+  if (i < 0) { box.innerHTML = ""; return; }
+  const d = days[i];
+  const meals = d.entry_count === 1 ? t("day_meals_one") : t("day_meals_many", { n: d.entry_count });
+  // Tap: partial -> counted (confirmed); confirmed/skipped -> back to inferred.
+  let chip = "";
+  if (d.status === "partial") {
+    chip = `<button type="button" class="day-status-chip include" data-day="${d.date}" data-next="complete" title="${t("day_status_tap_hint")}">${t("day_status_include")}</button>`;
+  } else if (d.status === "skipped") {
+    chip = `<button type="button" class="day-status-chip" data-day="${d.date}" data-next="clear" title="${t("day_status_tap_hint")}">${t("day_status_skipped")}</button>`;
+  } else if (d.status === "complete" && d.mark === "complete") {
+    chip = `<button type="button" class="day-status-chip confirmed" data-day="${d.date}" data-next="clear" title="${t("day_status_tap_hint")}">${t("day_status_confirmed")}</button>`;
+  }
+  const macros = d.status === "empty" ? "" : `<div class="hd-macros">${t("protein_short")} ${d.totals.protein_g} · ${t("carbs_short")} ${d.totals.carbs_g} · ${t("fat_short")} ${d.totals.fat_g}</div>`;
+  box.innerHTML = `
+    <div class="hd-top">
+      <button type="button" class="hd-step" data-step="-1" aria-label="${t("day_prev")}" ${i === 0 ? "disabled" : ""}>${ICON.chevLeft}</button>
+      <div class="hd-head">
+        <div class="hd-date">${longDate(d.date)}${i === days.length - 1 ? ` · ${t("day_today")}` : ""}</div>
+        <div class="hd-kcal">${d.status === "empty" ? "—" : `${d.totals.calories} ${t("kcal_unit")}`}</div>
+      </div>
+      <button type="button" class="hd-step" data-step="1" aria-label="${t("day_next")}" ${i === days.length - 1 ? "disabled" : ""}>${ICON.chev}</button>
+    </div>
+    <div class="hd-meta">${meals} · ${dayStatusText(d)}</div>
+    ${macros}
+    ${chip ? `<div class="hd-action">${chip}</div>` : ""}`;
+  box.querySelectorAll(".hd-step").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const next = days[i + Number(btn.dataset.step)];
+      if (next) selectHistoryDay(next.date);
+    }));
+  box.querySelectorAll("button.day-status-chip").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const status = btn.dataset.next === "clear" ? null : btn.dataset.next;
+      if (await setDayMark(btn.dataset.day, status)) loadHistory();
+    }));
+}
+
+// ---------- Weight ----------
+const parseLogged = (stamp) => new Date(stamp.replace(" ", "T"));
+const round1 = (n) => Math.round(n * 10) / 10;
+
+// Big current weight, how it moved (compared with ~2 weeks earlier, or the first weigh-in), and a small line of the
+// recent weigh-ins. The colour of the change follows the goal (down is good only when losing, up only when gaining).
+function renderWeightHero(entries, goalType) {
+  const locale = dateLocale();
+  const spark = $("weightSpark");
+  if (!entries.length) {
+    $("weightNow").textContent = "–";
+    $("weightDelta").textContent = "";
+    $("weightDelta").className = "wh-delta";
+    spark.innerHTML = "";
+    return;
+  }
+  const latest = entries[0];
+  $("weightNow").textContent = latest.weight_kg.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const older = entries.slice(1);
+  const latestAt = parseLogged(latest.logged_at).getTime();
+  const base = older.find((e) => latestAt - parseLogged(e.logged_at).getTime() >= 10 * 86400000) || older[older.length - 1];
+  const delta = $("weightDelta");
+  if (!base) {
+    delta.className = "wh-delta";
+    delta.textContent = t("weight_first");
+  } else {
+    const diff = round1(latest.weight_kg - base.weight_kg);
+    const date = parseLogged(base.logged_at).toLocaleDateString(locale, { month: "long", day: "numeric" });
+    const good = (goalType === "lose" && diff < 0) || (goalType === "gain" && diff > 0);
+    delta.className = `wh-delta ${diff === 0 ? "" : good ? "good" : "neutral"}`;
+    delta.textContent = diff === 0 ? t("weight_delta_flat", { date })
+      : t("weight_delta_since", { delta: `${diff > 0 ? "+" : "−"}${Math.abs(diff).toLocaleString(locale, { maximumFractionDigits: 1 })}`, date });
+  }
+  const points = entries.slice(0, 12).reverse().map((e) => e.weight_kg);
+  if (points.length < 2) { spark.innerHTML = ""; return; }
+  const lo = Math.min(...points), hi = Math.max(...points), W = 160, H = 56, pad = 7;
+  const xy = points.map((v, i) => [pad + (i / (points.length - 1)) * (W - 2 * pad), hi === lo ? H / 2 : pad + (1 - (v - lo) / (hi - lo)) * (H - 2 * pad)]);
+  const last = xy[xy.length - 1];
+  spark.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-hidden="true" focusable="false">
+    <path d="${xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ")}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+    <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="4.5" fill="currentColor"></circle></svg>`;
+}
+
 async function loadWeightLog() {
   const [weightRes, profileRes] = await Promise.all([
     apiFetch("/api/weight?limit=30"),
@@ -1055,30 +1237,31 @@ async function loadWeightLog() {
   if ($("weightLogInput") && entries.length && !$("weightLogInput").value) {
     $("weightLogInput").value = entries[0].weight_kg;
   }
+  renderWeightHero(entries, goalType);
 
   if (!entries.length) {
     list.innerHTML = `<div class="empty-state">${t("no_weight_data")}</div>`;
     return;
   }
 
-  const locale = currentLang() === "bg" ? "bg-BG" : undefined;
+  const locale = dateLocale();
   list.innerHTML = entries
     .map((entry, i) => {
       const prev = entries[i + 1];
       let deltaHtml = "";
       if (prev) {
-        const diff = Math.round((entry.weight_kg - prev.weight_kg) * 10) / 10;
+        const diff = round1(entry.weight_kg - prev.weight_kg);
         const sign = diff > 0 ? "+" : "";
         const wantsDown = goalType === "lose";
         const wantsUp = goalType === "gain";
         const isGood = (wantsDown && diff < 0) || (wantsUp && diff > 0);
         const cls = diff === 0 ? "neutral" : isGood ? "good" : "neutral";
-        deltaHtml = `<span class="delta ${cls}">${sign}${diff}kg</span>`;
+        deltaHtml = `<span class="delta ${cls}">${sign}${diff} ${t("kg_unit")}</span>`;
       }
-      const label = new Date(entry.logged_at.replace(" ", "T")).toLocaleDateString(locale, { month: "short", day: "numeric" });
+      const label = parseLogged(entry.logged_at).toLocaleDateString(locale, { month: "short", day: "numeric" });
       const compositionParts = [];
-      if (entry.fat_mass_kg != null) compositionParts.push(`${t("fat_mass_kg_label")}: ${entry.fat_mass_kg}kg`);
-      if (entry.muscle_mass_kg != null) compositionParts.push(`${t("muscle_mass_kg_label")}: ${entry.muscle_mass_kg}kg`);
+      if (entry.fat_mass_kg != null) compositionParts.push(`${t("fat_mass_kg_label")}: ${entry.fat_mass_kg}${t("kg_unit")}`);
+      if (entry.muscle_mass_kg != null) compositionParts.push(`${t("muscle_mass_kg_label")}: ${entry.muscle_mass_kg}${t("kg_unit")}`);
       if (entry.water_pct != null) compositionParts.push(`${t("water_pct_label")}: ${entry.water_pct}%`);
       const compositionHtml = compositionParts.length
         ? `<div class="weight-row-composition">${compositionParts.join(" · ")}</div>`
@@ -1087,9 +1270,9 @@ async function loadWeightLog() {
         <div class="weight-row" data-id="${entry.id}">
           <div class="weight-row-main">
             <div class="date">${label}</div>
-            <div class="kg">${entry.weight_kg}kg</div>
+            <div class="kg">${entry.weight_kg} ${t("kg_unit")}</div>
             ${deltaHtml}
-            <button class="delete-weight-btn" title="${t("delete")}">${ICON.trash}</button>
+            <button class="delete-weight-btn" type="button" aria-label="${t("delete")}: ${label}" title="${t("delete")}">${ICON.trash}</button>
           </div>
           ${compositionHtml}
         </div>`;
@@ -1240,10 +1423,34 @@ function getWeightKg() {
   return state.canon.weightKg;
 }
 
+function renderGoalsHero(g) {
+  $("ghCalories").textContent = g.calories;
+  $("ghProtein").textContent = `${g.protein_g} ${t("gram_unit")}`;
+  $("ghCarbs").textContent = `${g.carbs_g} ${t("gram_unit")}`;
+  $("ghFat").textContent = `${g.fat_g} ${t("gram_unit")}`;
+  $("ghWater").textContent = `${litres(g.water_ml)} ${t("litre_unit")}`;
+}
+
+function renderGoalTag(goalType) {
+  const tag = $("ghGoalType");
+  tag.hidden = !goalType;
+  tag.textContent = goalType ? t(`goal_tag_${goalType}`) : "";
+}
+
+async function loadSchedule() {
+  const res = await apiFetch("/api/schedule");
+  if (!res.ok) return;
+  state.schedule = await res.json();
+  renderScheduleViews();
+}
+
 async function loadPlanTab() {
   const res = await apiFetch("/api/profile");
   if (!res.ok) return;
   const p = await res.json();
+  renderGoalTag(p.goal_type);
+  if (!p.age || !p.height_cm || !p.weight_kg) $("profileFold").open = true;     // nothing to calculate from yet: show the form
+  loadSchedule();
   state.canon.heightCm = p.height_cm || null;
   state.canon.weightKg = p.weight_kg || null;
   renderUnitFields();
@@ -1629,6 +1836,7 @@ async function loadGoalsForm() {
   $("goalCarbs").value = g.carbs_g;
   $("goalFat").value = g.fat_g;
   $("goalWater").value = g.water_ml;
+  renderGoalsHero(g);
 }
 $("saveGoalsBtn").addEventListener("click", async () => {
   const result = await write($("saveGoalsBtn"), "PUT", "/api/goals", {
@@ -1647,16 +1855,227 @@ $("saveGoalsBtn").addEventListener("click", async () => {
 // The three actions keep their own handlers above; this only opens the sheet and gets it out of the way once
 // one of them has been chosen (the chosen action then opens its own sheet or the file picker).
 const closeAddFood = () => $("addFoodModal").classList.add("hidden");
-$("addFoodBtn").addEventListener("click", () => $("addFoodModal").classList.remove("hidden"));
+$("addFoodBtn").addEventListener("click", () => {
+  state.addContext = null;                       // opened by the button, not by a reminder: suggest from the schedule
+  $("addFoodModal").classList.remove("hidden");
+});
 $("addFoodCloseBtn").addEventListener("click", closeAddFood);
 ["takePhotoBtn", "manualEntryBtn", "quickAddBtn"].forEach((id) => $(id).addEventListener("click", closeAddFood));
 $("diaryLink").addEventListener("click", () => switchTab("history"));
 
+// ================== MEAL SCHEDULE & IN-APP REMINDERS ==================
+// The schedule is the user's own plan (stored per profile on the server). Reminders exist only while the app is
+// open and only when the user switched them on; schedule.js decides WHEN (pure, tested), this block draws it. No AI,
+// no background notifications. The time a meal was eaten is separate from when it was logged (see seedWhen below).
+const REMINDER_TICK_MS = 15000;
+const MEAL_TYPES = CSSchedule.MEAL_TYPES;
+
+function appNow() { return CSSchedule.clockNow(state.clock, Date.now()); }
+function nowHHMM() {
+  const n = appNow();
+  if (n) return CSSchedule.formatTime(n.min);
+  const d = new Date();
+  return CSSchedule.formatTime(d.getHours() * 60 + d.getMinutes());
+}
+function mealWord(type) { return t(MEAL_LABEL_KEY[type] || "meal_snack"); }
+
+function suggestedMealType() {
+  if (state.addContext && state.addContext.mealType) return state.addContext.mealType;
+  const now = appNow();
+  if (!now || !state.today) return "snack";
+  return CSSchedule.suggestMealType({ slots: state.schedule.slots, entries: state.today.entries, now });
+}
+// Every sheet that logs a meal asks for the meal type AND the time the user ate. It starts at the planned meal (or
+// Snack) and the current time; the user can change both, and what the sheet shows is what is saved.
+function seedWhen(prefix) {
+  $(`${prefix}MealType`).value = suggestedMealType();
+  $(`${prefix}MealTime`).value = nowHHMM();
+}
+function readWhen(prefix) {
+  return { meal_type: $(`${prefix}MealType`).value, eaten_time: $(`${prefix}MealTime`).value.trim() };
+}
+
+function leadLabel(n) { return n === 0 ? t("lead_short_0") : t("lead_short_n", { n }); }
+
+// Plan card, Settings row, "next meal" - all from state.schedule.
+function renderScheduleViews() {
+  const { slots, reminders } = state.schedule;
+  $("scheduleValue").textContent = slots.length ? t("schedule_value_n", { n: slots.length }) : t("schedule_value_none");
+  const reminderText = reminders.enabled ? t("reminders_state_on", { lead: leadLabel(reminders.lead_min) }) : t("reminders_state_off");
+  $("scheduleSummary").innerHTML = slots.length
+    ? `${slots.length === 1 ? t("schedule_n_one") : t("schedule_n_many", { n: slots.length })}<span class="sc-sub-line">${reminderText}</span>`
+    : t("schedule_empty");
+  $("scheduleChips").innerHTML = slots.length
+    ? slots.map((s) => `<span class="sc-chip"><b>${s.time}</b>${mealWord(s.meal_type)}</span>`).join("")
+    : `<p class="sc-empty">${t("schedule_empty_hint")}</p>`;
+}
+
+function renderNextMeal(next) {
+  const el = $("nextMeal");
+  el.hidden = !next;
+  el.textContent = next ? t("next_meal_note", { meal: mealWord(next.slot.meal_type), time: next.slot.time }) : "";
+}
+
+// Today's answers to the reminders ("later" / "skip today"): this device only, never sent anywhere.
+function reminderStore() {
+  const now = appNow();
+  const day = now ? now.date : "";
+  if (!state.reminderLocal || state.reminderLocal.day !== day) state.reminderLocal = CSSchedule.loadLocal(localStorage, day);
+  return state.reminderLocal;
+}
+function saveReminderLocal(local) {
+  state.reminderLocal = local;
+  CSSchedule.saveLocal(localStorage, local);
+}
+
+function reminderTick() {
+  const now = appNow();
+  if (!now || !state.today || $("appRoot").classList.contains("hidden")) { renderReminder(null); return; }
+  if (now.date !== state.today.date) { loadToday(); return; }          // midnight passed while the page stayed open
+  const result = CSSchedule.evaluate({
+    slots: state.schedule.slots, reminders: state.schedule.reminders, entries: state.today.entries, now, local: reminderStore(),
+  });
+  renderNextMeal(result.next);
+  refreshIdleLine(result.next);
+  renderReminder(result.notice);
+}
+
+function renderReminder(notice) {
+  const bar = $("reminderBar");
+  state.notice = notice;
+  if (!notice) {
+    bar.hidden = true;
+    state.noticeKey = null;
+    if (state.reminderShown) {
+      state.reminderShown = null;
+      if (legion.current && (legion.current.kind === "remind" || legion.current.kind === "demand")) legion.reset();
+    }
+    return;
+  }
+  const ask = notice.phase === "ask";
+  const key = `${notice.key}|${notice.phase}|${currentLang()}`;
+  if (state.noticeKey !== key) {              // only rewrite the text when it is a different reminder (a live region re-reads changes)
+    state.noticeKey = key;
+    $("reminderTitle").textContent = t(ask ? "reminder_title_ask" : "reminder_title_upcoming", { meal: mealWord(notice.slot.meal_type), time: notice.slot.time });
+    $("reminderSub").textContent = ask ? t("reminder_sub_ask") : "";
+    $("reminderSub").hidden = !ask;
+    $("reminderAte").textContent = t(ask ? "reminder_ate" : "reminder_log");
+    $("reminderLater").textContent = t(ask ? "reminder_not_yet" : "reminder_later");
+    $("reminderSkip").textContent = t(ask ? "reminder_not_eating" : "reminder_skip");
+  }
+  bar.classList.toggle("is-ask", ask);
+  bar.hidden = false;
+  // The centurion reacts too (Roman style), unless he is in the middle of approving a meal that was just logged.
+  if (isRoman() && state.reminderShown !== key && !(legion.current && legion.current.kind === "approve")) {
+    state.reminderShown = key;
+    legion.show(ask ? "demand" : "remind", { lang: currentLang(), vars: { time: notice.slot.time }, hold: true });
+  }
+}
+
+function answerReminder(kind) {
+  const n = state.notice;
+  const now = appNow();
+  if (!n || !now) return;
+  let local = reminderStore();
+  if (kind === "snooze") {
+    local = CSSchedule.snooze(local, n.key, now.min + CSSchedule.SNOOZE_MIN);
+    toast(t("reminder_snoozed_toast", { n: CSSchedule.SNOOZE_MIN }));
+  } else {
+    local = CSSchedule.skip(local, n.key);
+    toast(t("reminder_skipped_toast"));
+  }
+  saveReminderLocal(local);
+  reminderTick();
+}
+$("reminderAte").addEventListener("click", () => {
+  if (!state.notice) return;
+  state.addContext = { mealType: state.notice.slot.meal_type };      // the panel's next step starts at this meal
+  $("addFoodModal").classList.remove("hidden");
+});
+$("reminderLater").addEventListener("click", () => answerReminder("snooze"));
+$("reminderSkip").addEventListener("click", () => answerReminder("skip"));
+setInterval(reminderTick, REMINDER_TICK_MS);
+if (typeof document.addEventListener === "function") document.addEventListener("visibilitychange", () => { if (!document.hidden) reminderTick(); });
+
+// ---------- the schedule dialog ----------
+// The dialog edits a COPY (state.scheduleDraft); nothing is stored until Save, and Cancel / Esc / drag throw it away.
+function openSchedule() {
+  state.scheduleDraft = JSON.parse(JSON.stringify(state.schedule));
+  renderScheduleDraft();
+  $("scheduleModal").classList.remove("hidden");
+}
+
+function scheduleDraftSet(i, field, value) {
+  const slot = state.scheduleDraft.slots[i];
+  if (slot) slot[field] = value;
+}
+function scheduleDraftRemove(i) {
+  state.scheduleDraft.slots.splice(i, 1);
+  renderScheduleDraft();
+}
+function scheduleDraftAdd() {
+  const d = state.scheduleDraft;
+  if (d.slots.length >= CSSchedule.MAX_SLOTS) return;
+  const used = new Set(d.slots.map((s) => s.time));
+  const time = ["12:00", "08:00", "13:00", "16:00", "19:00", "21:00", "10:30", "15:00", "17:30", "20:00"].find((x) => !used.has(x)) || "12:00";
+  d.slots.push({ meal_type: d.slots.length ? "snack" : "breakfast", time });
+  renderScheduleDraft();
+}
+
+function renderScheduleDraft() {
+  const d = state.scheduleDraft;
+  $("scheduleRows").innerHTML = d.slots.map((s, i) => `
+    <div class="schedule-row" data-i="${i}">
+      <select class="sr-type" data-i="${i}" aria-label="${t("schedule_row_meal")} ${i + 1}">${MEAL_TYPES.map((m) => `<option value="${m}"${m === s.meal_type ? " selected" : ""}>${mealWord(m)}</option>`).join("")}</select>
+      <input type="time" class="sr-time time-input" data-i="${i}" value="${s.time}" aria-label="${t("schedule_row_time")} ${i + 1}">
+      <button type="button" class="sr-remove" data-i="${i}" aria-label="${t("schedule_remove")} ${i + 1}">${ICON.x}</button>
+    </div>`).join("");
+  $("scheduleRows").querySelectorAll(".sr-type").forEach((el) => el.addEventListener("change", () => scheduleDraftSet(Number(el.dataset.i), "meal_type", el.value)));
+  $("scheduleRows").querySelectorAll(".sr-time").forEach((el) => el.addEventListener("input", () => scheduleDraftSet(Number(el.dataset.i), "time", el.value)));
+  $("scheduleRows").querySelectorAll(".sr-remove").forEach((el) => el.addEventListener("click", () => scheduleDraftRemove(Number(el.dataset.i))));
+  $("scheduleAddBtn").disabled = d.slots.length >= CSSchedule.MAX_SLOTS;
+  $("schedulePresetBtn").hidden = d.slots.length > 0;
+  $("remindersToggle").checked = d.reminders.enabled;
+  $("leadSelect").value = String(d.reminders.lead_min);
+  $("leadField").hidden = !d.reminders.enabled;
+}
+
+$("scheduleAddBtn").addEventListener("click", scheduleDraftAdd);
+$("schedulePresetBtn").addEventListener("click", () => { state.scheduleDraft.slots = CSSchedule.presetSlots(); renderScheduleDraft(); });
+$("remindersToggle").addEventListener("change", (e) => {
+  state.scheduleDraft.reminders.enabled = e.target.checked;
+  $("leadField").hidden = !e.target.checked;
+});
+$("leadSelect").addEventListener("change", (e) => { state.scheduleDraft.reminders.lead_min = Number(e.target.value); });
+$("scheduleCancelBtn").addEventListener("click", () => { state.scheduleDraft = null; $("scheduleModal").classList.add("hidden"); });
+$("scheduleSaveBtn").addEventListener("click", async () => {
+  const d = state.scheduleDraft;
+  if (!d) return;
+  const body = {
+    slots: d.slots.map((s) => ({ meal_type: s.meal_type, time: s.time })),
+    reminders: { enabled: d.reminders.enabled, lead_min: d.reminders.lead_min },
+  };
+  const result = await write($("scheduleSaveBtn"), "PUT", "/api/schedule", body);
+  if (!wrote(result)) return;                     // the dialog stays open with everything as it was typed
+  state.schedule = result.data;
+  state.scheduleDraft = null;
+  state.reminderShown = null;
+  state.noticeKey = null;
+  renderScheduleViews();
+  $("scheduleModal").classList.add("hidden");
+  toast(t("schedule_saved_toast"));
+  reminderTick();
+});
+$("scheduleEditBtn").addEventListener("click", openSchedule);
+$("scheduleOpenBtn").addEventListener("click", () => openFromSettings("scheduleModal", openSchedule));
+
 // ================== ROMAN LEGION (presentation only) ==================
 // Local lines and reactions: no network, no AI, nothing is stored or written to the user's data. The hero shows the
-// centurion only in Roman style, and only what is real: a calm line from today's totals and, right after a meal was
-// actually logged, his approval. "Reminder" and "missing record" need a real meal schedule that does not exist yet, so
-// they live ONLY in the separate, clearly-labelled reaction preview (Settings -> preview), never on the real screen.
+// centurion only in Roman style, and only what is real: a calm line from today's totals (naming the next planned meal
+// when there is one), his approval right after a meal was actually logged, and - only when the user switched
+// reminders on and only while the app is open - a reminder before a planned meal and a question when it has no
+// record (schedule.js decides when). The separate, clearly-labelled reaction preview (Settings -> preview) still plays
+// every reaction with made-up times and writes nothing.
 const legion = CSLegion.createController({ render: (r) => renderLegion(r) });
 const previewLegion = CSLegion.createController({ render: (r) => renderPreview(r), idleDelayMs: 60 * 60 * 1000 });
 const isRoman = () => typeof look !== "undefined" && look.mode === "roman";
@@ -1674,7 +2093,7 @@ function renderLegion(r) {
   $("legionBubble").hidden = !roman;
   $("legionPreviewBtn").hidden = !roman;
   if (!roman) return;
-  const reaction = r || CSLegion.reaction(state.legionIdle, currentLang(), 0);
+  const reaction = r || CSLegion.reaction(state.legionIdle, currentLang(), 0, state.legionVars);
   setPortraitMood($("legionPortrait"), reaction.mood);
   const bubble = $("legionBubble");
   $("legionText").textContent = reaction.text;
@@ -1697,6 +2116,7 @@ function renderPreview(r) {
 }
 
 function afterMealLogged() {
+  state.addContext = null;
   if (isRoman()) legion.show("approve", { lang: currentLang() });
 }
 
@@ -1712,7 +2132,7 @@ $("legionPreviewBtn").addEventListener("click", () => openFromSettings("legionPr
 }));
 $("legionPreviewCloseBtn").addEventListener("click", () => $("legionPreviewModal").classList.add("hidden"));
 if (typeof look !== "undefined") {
-  look.onChange(() => { refreshAppearanceControls(); legion.reset(); });
+  look.onChange(() => { refreshAppearanceControls(); legion.reset(); state.reminderShown = null; refreshGate(); reminderTick(); });
   refreshAppearanceControls();
 }
 renderLegion(null);
@@ -1739,6 +2159,7 @@ const DIALOG_CLOSE_BUTTON = {
   addFoodModal: "addFoodCloseBtn", welcomeModal: "welcomeDismissBtn", photoReviewModal: "photoCancelBtn",
   whatsNewModal: "whatsNewCloseBtn", manualModal: "manualCancelBtn", favoritesModal: "favoritesCloseBtn",
   editModal: "editCancelBtn", settingsModal: "settingsCloseBtn", legionPreviewModal: "legionPreviewCloseBtn",
+  scheduleModal: "scheduleCancelBtn",
 };
 const dialogs = Array.from(document.querySelectorAll(".modal-backdrop"));
 const dialogStack = CSDialogs.createStack();
@@ -1912,6 +2333,7 @@ function attachSheetDrag(sheetEl, closeFn) {
 
 attachSheetDrag($("addFoodModal"), closeAddFood);
 attachSheetDrag($("legionPreviewModal"), () => $("legionPreviewModal").classList.add("hidden"));
+attachSheetDrag($("scheduleModal"), () => $("scheduleCancelBtn").click());
 attachSheetDrag($("welcomeModal"), () => $("welcomeModal").classList.add("hidden"));
 attachSheetDrag($("photoReviewModal"), closePhotoReview);
 attachSheetDrag($("whatsNewModal"), () => $("whatsNewModal").classList.add("hidden"));

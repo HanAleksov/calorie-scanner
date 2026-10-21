@@ -9,13 +9,15 @@
     /api/__test/fail?status=500&times=1                make the next N state-changing requests fail
     /api/__test/expire?user=1                          delete that profile's sessions (simulate expiry)
     /api/__test/state                                  counters: requests seen per route
+    /api/__test/clock?hhmm=13:40                       set the APP's wall clock (today, that time; keeps running). "reset" = real time.
+                                                       Drives the schedule / reminders without waiting for the real hour.
 """
 
 import json
 import os
 import sys
 import tempfile
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 BACKEND = Path(__file__).resolve().parents[1]
@@ -55,6 +57,12 @@ meal_plan_module.generate_meal_plan = lambda targets, notes="", lang="en": {
 
 HOOKS = {"delay": {}, "fail": {"status": 500, "times": 0}, "seen": {}}
 
+# A movable app clock for the browser tests: tzutil.now_local() = real time + offset (everything that stamps or
+# bounds a day goes through it, so created_at, "today", future-time checks and the page's own clock all agree).
+CLOCK = {"offset": timedelta(0)}
+_real_now_local = tzutil.now_local
+tzutil.now_local = lambda: _real_now_local() + CLOCK["offset"]
+
 
 @main.app.middleware("http")
 async def test_hooks(request, call_next):
@@ -66,6 +74,13 @@ async def test_hooks(request, call_next):
             HOOKS["delay"][q["path"]] = int(q["ms"])
         elif path == "/api/__test/fail":
             HOOKS["fail"] = {"status": int(q.get("status", 500)), "times": int(q.get("times", 1))}
+        elif path == "/api/__test/clock":
+            if q.get("hhmm") in (None, "reset"):
+                CLOCK["offset"] = timedelta(0)
+            else:
+                hh, mm = q["hhmm"].split(":")
+                real = _real_now_local()
+                CLOCK["offset"] = real.replace(hour=int(hh), minute=int(mm), second=0, microsecond=0) - real
         elif path == "/api/__test/expire":
             with db.get_conn() as conn:
                 conn.execute("DELETE FROM sessions WHERE user_id = ?", (int(q["user"]),))
@@ -131,13 +146,21 @@ def make_demo_photos(count=4):
     return names, True
 
 
+# (how much of the target was eaten, meals logged) for the 13 days before today; None = nothing logged
+_HISTORY_PATTERN = [(.92, 3), (1.05, 3), (.88, 3), (1.12, 3), (.45, 1), (.97, 3), (1.08, 3), None, (.9, 3), (1.0, 3), (.5, 2), (1.04, 3), (.8, 3)]
+
+
 def _history(conn, uid, today, goal_kcal):
-    for d in range(1, 8):
+    for d, step in enumerate(_HISTORY_PATTERN, start=1):
+        if step is None:
+            continue
+        factor, meals = step
         day = today - timedelta(days=d)
-        for meal, hour, share in (("breakfast", "08", .3), ("lunch", "13", .4), ("dinner", "19", .3)):
+        for meal, hour, share in (("breakfast", "08", .3), ("lunch", "13", .4), ("dinner", "19", .3))[:meals]:
             db.insert_entry(conn, user_id=uid, created_at=f"{day.isoformat()}T{hour}:00:00", meal_type=meal, source="manual",
-                            items_json=json.dumps([{"name": "Seed " + meal, "est_grams": None}]), total_calories=round(goal_kcal * share),
-                            protein_g=45, carbs_g=80, fat_g=25, confidence="manual")
+                            items_json=json.dumps([{"name": "Seed " + meal, "est_grams": None}]), total_calories=round(goal_kcal * share * factor),
+                            protein_g=round(45 * factor), carbs_g=round(80 * factor), fat_g=round(25 * factor), confidence="manual")
+    db.set_day_mark(conn, uid, (today - timedelta(days=13)).isoformat(), "skip")
 
 
 def seed_demo_profile(today):
@@ -146,29 +169,41 @@ def seed_demo_profile(today):
     photos, _real = make_demo_photos()
     long_name = "Домашна мусака със сирене, патладжани и картофи, подправена с копър и чубрица, сервирана със зелена салата и тъмен хляб"
 
-    def person(conn, name, goal, goals, weight, entries, water, h=180):
+    def person(conn, name, goal, goals, weight, entries, water, h=180, trend=None, schedule=None):
         uid = db.create_user(conn, name, None)["id"]
         db.set_profile(conn, uid, {"goal_type": goal, "height_cm": h, "weight_kg": weight, "age": 25, "sex": "male", "activity_level": "moderate"})
         db.set_goals(conn, uid, calories=goals[0], protein_g=goals[1], carbs_g=goals[2], fat_g=goals[3], water_ml=goals[4])
-        db.add_weight_entry(conn, uid, weight, f"{(today - timedelta(days=1)).isoformat()}T08:00:00")
+        if trend:                       # (days ago, kg) pairs, oldest first; the last one is "now"
+            for ago, kg in trend:
+                db.add_weight_entry(conn, uid, kg, f"{(today - timedelta(days=ago)).isoformat()}T08:00:00")
+        else:
+            db.add_weight_entry(conn, uid, weight, f"{(today - timedelta(days=1)).isoformat()}T08:00:00")
+        if schedule:                    # (meal type, "HH:MM") pairs, reminders on/off
+            slots, reminders_on = schedule
+            db.set_schedule(conn, uid, [{"meal_type": m, "time": at} for m, at in slots], {"enabled": reminders_on, "lead_min": 15})
         _history(conn, uid, today, goals[0])
         for e in entries:
             db.insert_entry(conn, user_id=uid, created_at=f"{today.isoformat()}T{e['at']}:00", meal_type=e["meal"], source="photo" if e.get("photo") is not None else "manual",
                             items_json=json.dumps([{"name": e["name"], "est_grams": 250, "calories": e["kcal"], "protein_g": e["p"], "carbs_g": e["c"], "fat_g": e["f"]}]),
                             total_calories=e["kcal"], protein_g=e["p"], carbs_g=e["c"], fat_g=e["f"], confidence=e.get("conf", "high"),
-                            notes=e.get("note"), energy_score=e.get("energy"),
+                            notes=e.get("note"), energy_score=e.get("energy"), eaten_time=e.get("eaten"),
                             image_path=photos[e["photo"] % len(photos)] if e.get("photo") is not None else None)
         if water:
             db.add_water(conn, uid, water, f"{today.isoformat()}T09:00:00")
         return uid
 
     with db.get_conn() as conn:
-        person(conn, "Demo", "gain", (2400, 150, 270, 80, 2500), 70.0, [
-            dict(at="08:10", meal="snack", name="Овесена каша с боровинки", kcal=420, p=28, c=52, f=12, photo=0),
-            dict(at="13:05", meal="lunch", name="Пилешко с ориз", kcal=720, p=42, c=78, f=22, photo=1),
-            dict(at="15:40", meal="snack", name="Кисело мляко с плодове", kcal=300, p=20, c=32, f=14, photo=2),
-        ], 1000)
-        person(conn, "Demo Empty", "gain", (2400, 150, 270, 80, 2500), 70.0, [], 0)
+        # "Demo": an old entry (no eaten time: only "logged ..." is shown), one the user timed, and a reminder schedule that is ON
+        # identical copies for the browser tests: each test section gets its own so they do not see each other's writes
+        for demo_name in ("Demo", "Demo R", "Demo N", "Demo P", "Demo L"):
+            person(conn, demo_name, "gain", (2400, 150, 270, 80, 2500), 70.0, [
+                dict(at="08:10", meal="breakfast", name="Овесена каша с боровинки", kcal=420, p=28, c=52, f=12, photo=0, eaten="08:05"),
+                dict(at="13:05", meal="lunch", name="Пилешко с ориз", kcal=720, p=42, c=78, f=22, photo=1),
+                dict(at="15:40", meal="snack", name="Кисело мляко с плодове", kcal=300, p=20, c=32, f=14, photo=2, eaten="15:30"),
+            ], 1000, trend=[(21, 68.4), (18, 68.7), (15, 68.9), (12, 69.1), (9, 69.0), (6, 69.4), (3, 69.7), (1, 70.0)],
+                schedule=([("breakfast", "08:00"), ("lunch", "13:00"), ("snack", "16:30"), ("dinner", "19:30")], True))
+        person(conn, "Demo Empty", "gain", (2400, 150, 270, 80, 2500), 70.0, [], 0,
+               schedule=([("breakfast", "08:00"), ("lunch", "13:00"), ("dinner", "19:00")], False))
         person(conn, "Demo Over", "gain", (2400, 150, 270, 80, 2500), 70.0, [
             dict(at="08:00", meal="breakfast", name="Палачинки с извара", kcal=820, p=60, c=90, f=30, photo=0, energy=4),
             dict(at="13:00", meal="lunch", name="Телешко със задушени зеленчуци", kcal=1010, p=70, c=110, f=40, photo=1, energy=4),
