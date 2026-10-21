@@ -67,12 +67,34 @@ def _table_counts(conn) -> dict:
     return {t: conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in tables}
 
 
+PHOTO_COLUMNS = ("image_path", "image_path2")
+
+
 def _referenced_photos(conn) -> set:
+    """Every photo name an entry points to. If that can't be established it is an ERROR, never an empty set:
+    an empty answer would make a database whose photos are unknown look like one that has none."""
     try:
-        rows = conn.execute("SELECT image_path, image_path2 FROM entries").fetchall()
-    except sqlite3.Error:
-        return set()
-    return {p for r in rows for p in r if p}
+        columns = {r[1] for r in conn.execute('PRAGMA table_info("entries")')}
+    except sqlite3.Error as e:
+        raise BackupError(f"can't inspect the 'entries' table, so the photo references can't be checked: {e}")
+    if not columns:
+        raise BackupError("the database has no 'entries' table, so the photo references can't be checked")
+    absent = [c for c in PHOTO_COLUMNS if c not in columns]
+    if absent:
+        raise BackupError(f"'entries' has no column {', '.join(absent)}, so the photo references can't be checked")
+    try:
+        rows = conn.execute(f"SELECT {', '.join(PHOTO_COLUMNS)} FROM entries").fetchall()
+    except sqlite3.Error as e:
+        raise BackupError(f"can't read the photo references from 'entries': {e}")
+    names = set()
+    for row in rows:
+        for p in row:
+            if p is None or p == "":
+                continue
+            if not isinstance(p, str):
+                raise BackupError(f"an entry holds a photo reference that is not text: {p!r}")
+            names.add(p)
+    return names
 
 
 def _inspect_db(db_path: Path) -> dict:
@@ -274,6 +296,8 @@ def verify(archive) -> dict:
                     info = _inspect_db(dbp)
                 except sqlite3.Error as e:
                     problems.append(f"database in the archive can't be read: {e}")
+                except BackupError as e:      # photo references can't be established -> not a valid archive
+                    problems.append(f"database in the archive: {e}")
         missing = set(manifest["photos_referenced_but_missing"])
         if info is not None:
             if info["integrity_check"] != "ok":

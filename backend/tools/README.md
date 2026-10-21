@@ -34,7 +34,15 @@ An archive counts as a **full backup** only when `backup.py verify` ends with `V
    SHA-256 of every file, per-table row counts and the integrity-check result; `create` then **reads the
    archive back and verifies it**. The two fingerprints (SHA-256 of the database file and of every photo)
    prove that nothing was written between them, i.e. that the database copy and the photo copy describe the
-   same moment. If they differ, throw the archive away and repeat.
+   same moment. **Equal fingerprints compare only the two end states: a write that changed something and
+   changed it back, or two writes in between, would not show.** So the window must be closed technically,
+   not just announced: on the server `archive_window.sh` stops the app container (gracefully), takes
+   everything, and starts the app again from a trap on every exit path; each attempt has its own directory
+   and a failed one is kept (never deleted) with a `FAILED` file. If the fingerprints differ, the attempt is
+   rejected and repeated in a new directory.
+   `verify` and `create` also refuse a database whose photo references cannot be checked (no `entries`
+   table, or no `image_path` / `image_path2` column, or a non-text reference): an unknown answer is never
+   treated as "no photos".
    Copy the `.zip` off the server (it contains personal data) and check its SHA-256 after the transfer.
 
 2. **Prove the backup restores** — into new empty paths, never over the live ones:

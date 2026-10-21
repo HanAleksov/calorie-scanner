@@ -309,6 +309,72 @@ class BackupRestoreTests(AppTestCase):
         self.assertFalse(backup.verify(lying)["ok"])
         self.assertEqual(len(backup.verify(lying)["incomplete"]), 1)
 
+    # ---------- photo references must be CHECKABLE, otherwise the archive is refused ----------
+    def forged_archive(self, name, script):
+        """An otherwise perfectly consistent archive (real hashes, counts, manifest) around a hand-made database."""
+        dbp = self.tmp / f"{name}.db"
+        conn = sqlite3.connect(dbp)
+        conn.executescript(script)
+        conn.commit()
+        counts = backup._table_counts(conn)
+        conn.close()
+        manifest = {
+            "format_version": 1, "created_at": "2030-01-01T00:00:00",
+            "files": {"db/calorie_scanner.db": {"sha256": backup._sha256_file(dbp), "bytes": dbp.stat().st_size}},
+            "table_counts": counts, "integrity_check": "ok", "foreign_key_violations": 0,
+            "photos_referenced": 0, "photos_present": 0, "photos_referenced_but_missing": [], "photos_unreferenced": [],
+        }
+        return self.raw_archive(f"{name}.zip", [("db/calorie_scanner.db", dbp.read_bytes()),
+                                                ("MANIFEST.json", json.dumps(manifest))])
+
+    def assertRefused(self, archive, fragment):
+        report = backup.verify(archive)
+        self.assertFalse(report["ok"], report)
+        self.assertTrue(any(fragment in p for p in report["problems"]), report)
+        self.assertEqual(backup.main(["verify", str(archive)]), 1)
+        target = self.tmp / ("restore-" + archive.stem)
+        with self.assertRaises(backup.BackupError):
+            backup.restore(archive, target / "a.db", target / "u")
+        self.assertFalse(target.exists())
+
+    def test_an_archive_whose_database_has_no_entries_table_is_refused(self):
+        archive = self.forged_archive("unrelated", "CREATE TABLE unrelated (id INTEGER PRIMARY KEY); INSERT INTO unrelated VALUES (1);")
+        self.assertRefused(archive, "no 'entries' table")
+
+    def test_an_entries_table_without_image_path2_is_refused_even_when_it_points_at_a_missing_photo(self):
+        archive = self.forged_archive("old-entries", "CREATE TABLE entries (id INTEGER PRIMARY KEY, image_path TEXT);"
+                                                     "INSERT INTO entries (image_path) VALUES ('gone.jpg');")
+        self.assertRefused(archive, "no column image_path2")
+
+    def test_an_entries_table_without_image_path_is_refused(self):
+        archive = self.forged_archive("no-path", "CREATE TABLE entries (id INTEGER PRIMARY KEY, image_path2 TEXT);")
+        self.assertRefused(archive, "no column image_path")
+
+    def test_a_photo_reference_that_is_not_text_is_refused(self):
+        archive = self.forged_archive("number", "CREATE TABLE entries (id INTEGER PRIMARY KEY, image_path, image_path2);"
+                                                "INSERT INTO entries (image_path) VALUES (12345);")
+        self.assertRefused(archive, "not text")
+
+    def test_create_refuses_a_database_whose_photo_references_cannot_be_checked(self):
+        for label, script in {"no entries": "CREATE TABLE unrelated (id INTEGER PRIMARY KEY);",
+                              "no image_path2": "CREATE TABLE entries (id INTEGER PRIMARY KEY, image_path TEXT);"}.items():
+            with self.subTest(label):
+                odd = self.tmp / f"odd-{label.replace(' ', '-')}.db"
+                conn = sqlite3.connect(odd)
+                conn.executescript(script)
+                conn.commit()
+                conn.close()
+                out = self.tmp / f"odd-out-{label.replace(' ', '-')}"
+                with self.assertRaises(backup.BackupError):
+                    backup.create(odd, main.UPLOADS_DIR, out)
+                self.assertEqual(list(out.glob("*")) if out.exists() else [], [])
+                self.assertEqual(backup.main(["create", "--db", str(odd), "--uploads", str(main.UPLOADS_DIR), "--out", str(out)]), 1)
+
+    def test_the_real_schema_still_passes(self):
+        """The refusal is about missing structure, not about photos: a database with an empty entries table is fine."""
+        archive = self.forged_archive("empty-but-valid", "CREATE TABLE entries (id INTEGER PRIMARY KEY, image_path TEXT, image_path2 TEXT);")
+        self.assertTrue(backup.verify(archive)["ok"], backup.verify(archive))
+
     # ---------- fingerprints: "was anything written during the backup window?" ----------
     def fp(self, db=None, uploads=None):
         return backup.fingerprint(db or self.src_db, uploads or main.UPLOADS_DIR)
